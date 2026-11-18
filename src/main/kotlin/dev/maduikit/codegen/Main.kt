@@ -21,7 +21,7 @@ internal val figmaInstanceChildId = Regex("I[0-9]+:[0-9]+(?:;[0-9]+:[0-9]+)+")
 internal val figmaComponentId = Regex("[0-9]+:[0-9]+")
 private val argbPattern = Regex("#[0-9A-Fa-f]{8}")
 private val numericPattern = Regex("-?(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,6})?")
-private val boxFields = setOf("gap", "padding", "paddingEdges", "fillWidth", "width", "height", "background", "clip", "linearGradient", "mainCentered", "crossCentered")
+private val boxFields = setOf("gap", "padding", "paddingEdges", "fillWidth", "width", "height", "background", "clip", "linearGradient", "mainCentered", "crossCentered", "cornerRadii")
 private val textFields = setOf("text", "fontSize", "color", "bold", "fillWidth", "width", "height", "lineHeight", "letterSpacing", "fontFamily")
 
 internal data class Problem(val nodeId: String, val path: String, val message: String)
@@ -43,6 +43,7 @@ private data class Node(
     val width: BigDecimal? = null,
     val paddingEdges: List<BigDecimal>? = null,
     val clip: Boolean = false,
+    val cornerRadii: List<BigDecimal>? = null,
     val lineHeight: BigDecimal? = null,
     val letterSpacing: BigDecimal? = null,
     val fontFamily: String? = null,
@@ -142,6 +143,19 @@ private class Reader {
             return values.filterNotNull()
         }
 
+        fun cornerRadii(): List<BigDecimal>? {
+            val raw = obj["cornerRadii"] ?: return null
+            val values = (raw as? JsonArray)?.map { field ->
+                (field as? JsonPrimitive)?.takeUnless { it.isString }?.content
+                    ?.takeIf(numericPattern::matches)?.toBigDecimalOrNull()
+            }
+            if (values == null || values.size != 4 || values.any { it == null || it !in 0.toBigDecimal()..2048.toBigDecimal() }) {
+                error(id, "$path.cornerRadii", "Expected four clockwise radii in 0..2048")
+                return null
+            }
+            return values.filterNotNull().takeIf { it.any { n -> n.signum() > 0 } }
+        }
+
         fun gradient(): Gradient? {
             val value = obj["linearGradient"] ?: return null
             val raw = value as? JsonObject
@@ -198,6 +212,7 @@ private class Reader {
                     padding = number("padding", max = 128), fillWidth = flag("fillWidth"),
                     height = number("height", min = 1), background = color("background"), children = children,
                     gradient = gradient(), width = number("width", min = 1), paddingEdges = edges(), clip = flag("clip"),
+                    cornerRadii = cornerRadii(),
                 )
             }
             "Text" -> {
@@ -247,6 +262,11 @@ private fun Node.containsCenter(): Boolean = mainCentered || crossCentered || ch
 
 private fun Node.containsGradient(): Boolean = gradient != null || children.any(Node::containsGradient)
 
+private fun Node.containsCorners(): Boolean = cornerRadii != null || children.any(Node::containsCorners)
+private fun Node.containsRoundedClip(): Boolean = (clip && cornerRadii != null) || children.any(Node::containsRoundedClip)
+private fun Node.containsRoundedUnclippedGradient(): Boolean =
+    (!clip && gradient != null && cornerRadii != null) || children.any(Node::containsRoundedUnclippedGradient)
+
 private class Emitter(private val function: String) {
     private val lines = mutableListOf<String>()
     val source = linkedMapOf<String, Int>()
@@ -278,6 +298,12 @@ private class Emitter(private val function: String) {
             "import androidx.compose.ui.draw.clipToBounds",
             "import androidx.compose.ui.text.font.FontFamily",
         )
+        if (root.containsCorners()) lines += "import androidx.compose.foundation.shape.AbsoluteRoundedCornerShape"
+        if (root.containsRoundedClip()) lines += "import androidx.compose.ui.draw.clip"
+        if (root.containsRoundedUnclippedGradient()) lines += listOf(
+            "import androidx.compose.ui.graphics.Shape",
+            "import androidx.compose.ui.graphics.drawOutline",
+        )
         if (root.containsCenter()) lines += "import androidx.compose.ui.Alignment"
         if (root.containsGradient()) lines += listOf(
             "import androidx.compose.ui.draw.drawWithCache",
@@ -294,11 +320,18 @@ private class Emitter(private val function: String) {
         if (root.containsGradient()) lines += listOf(
             "",
             "private fun Modifier.figmaAxisGradient(horizontal: Boolean, from: Float, to: Float,",
-            "    vararg stops: Pair<Float, Color>): Modifier = drawWithCache {",
+            if (root.containsRoundedUnclippedGradient())
+                "    vararg stops: Pair<Float, Color>, shape: Shape? = null): Modifier = drawWithCache {"
+            else "    vararg stops: Pair<Float, Color>): Modifier = drawWithCache {",
             "    val start = if (horizontal) Offset(size.width * from, 0f) else Offset(0f, size.height * from)",
             "    val end = if (horizontal) Offset(size.width * to, 0f) else Offset(0f, size.height * to)",
             "    val brush = Brush.linearGradient(*stops, start = start, end = end)",
-            "    onDrawBehind { drawRect(brush) }",
+            if (root.containsRoundedUnclippedGradient())
+                "    val outline = shape?.createOutline(size, layoutDirection, this)"
+            else "    onDrawBehind { drawRect(brush) }",
+            *if (root.containsRoundedUnclippedGradient()) arrayOf(
+                "    onDrawBehind { if (outline == null) drawRect(brush) else drawOutline(outline, brush) }"
+            ) else emptyArray(),
             "}",
         )
         return lines.joinToString("\n", postfix = "\n")
@@ -308,15 +341,24 @@ private class Emitter(private val function: String) {
         val indent = "    ".repeat(depth)
         source[node.id] = lines.size + 1
         node.sourceComponentId?.let { sourceComponents[node.id] = it }
+        val shape = node.cornerRadii?.let {
+            val names = listOf("topLeft", "topRight", "bottomRight", "bottomLeft")
+            it.mapIndexed { i, r -> "${names[i]} = ${formatted(r)}.dp" }
+                .joinToString(", ", "AbsoluteRoundedCornerShape(", ")")
+        }
         val mods = buildList {
             if (node.fillWidth) add("fillMaxWidth()")
             node.width?.let { add("width(${formatted(it)}.dp)") }
             node.height?.let { add("height(${formatted(it)}.dp)") }
-            if (node.clip) add("clipToBounds()")
-            node.background?.let { add("background(Color(0x$it))") }
+            if (node.clip) add(if (shape == null) "clipToBounds()" else "clip($shape)")
+            node.background?.let {
+                if (shape != null && !node.clip) add("background(Color(0x$it), $shape)")
+                else add("background(Color(0x$it))")
+            }
             node.gradient?.let { gradient ->
                 val stops = gradient.stops.joinToString(", ") { (at, color) -> "${fraction(at)} to Color(0x$color)" }
-                add("figmaAxisGradient(${gradient.axis == "x"}, ${fraction(gradient.start)}, ${fraction(gradient.end)}, $stops)")
+                val shaped = if (shape != null && !node.clip) ", shape = $shape" else ""
+                add("figmaAxisGradient(${gradient.axis == "x"}, ${fraction(gradient.start)}, ${fraction(gradient.end)}, $stops$shaped)")
             }
             node.padding?.let { add("padding(${formatted(it)}.dp)") }
             node.paddingEdges?.let {

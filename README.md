@@ -92,3 +92,15 @@ build/install/MadUIKitCodegen/bin/MadUIKitCodegen generate-figma \
 对于展开的实例，源码映射另外记录 `instanceComponents`
 （实例 ID 到源组件 ID），仅作诊断。真实输入及其生成输出可能包含
 设计文字和标识，公开分享前请检查内容。
+
+### Circular corner radii (synthetic coverage)
+Horizontal and vertical Auto Layout frames (including opt-in expanded visual
+instances) accept a uniform Figma `cornerRadius` or four
+`rectangleCornerRadii` in clockwise physical order TL, TR, BR, BL. Generated
+CMP uses `AbsoluteRoundedCornerShape` so RTL does not mirror physical Figma
+corners. Solid and supported axis-gradient backgrounds are shaped.
+`clipsContent: true` clips descendants to the same shape; otherwise only the
+paint follows the outline. Zero radii preserve the previous output. Nonzero
+corner smoothing (squircles), malformed or conflicting radii, and unsupported
+node types remain explicit failures. The synthetic sample is not a private
+design or a pixel-parity claim. [Figma REST node types](https://developers.figma.com/docs/rest-api/file-node-types/).

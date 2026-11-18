@@ -133,10 +133,22 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
                 if (node["itemReverseZIndex"] != null && node.flag("itemReverseZIndex") != false)
                     fail("itemReverseZIndex", "Reverse stacking is not supported")
                 if (node["clipsContent"] != null && node.flag("clipsContent") == null) fail("clipsContent", "Expected boolean")
-                zero("cornerRadius"); zero("cornerSmoothing")
-                val corners = node["rectangleCornerRadii"]
-                if (corners != null && (corners !is JsonArray || corners.any { it.decimal()?.compareTo(BigDecimal.ZERO) != 0 }))
-                    fail("rectangleCornerRadii", "Nonzero corner radii are not supported")
+                zero("cornerSmoothing")
+                val scalar = node.num("cornerRadius")
+                val limit = 2048.toBigDecimal()
+                if (node["cornerRadius"] != null && (scalar == null || scalar.signum() < 0 || scalar > limit))
+                    fail("cornerRadius", "Expected circular radius in 0..2048")
+                val rawCorners = node["rectangleCornerRadii"]
+                val parsedCorners = (rawCorners as? JsonArray)?.map { it.decimal() }
+                val corners = if (rawCorners != null) {
+                    if (parsedCorners == null || parsedCorners.size != 4 || parsedCorners.any { it == null || it.signum() < 0 || it > limit }) {
+                        fail("rectangleCornerRadii", "Expected four circular radii in 0..2048, clockwise from top left")
+                        null
+                    } else parsedCorners.filterNotNull().also { values ->
+                        if (scalar != null && values.any { it.compareTo(scalar) != 0 })
+                            fail("rectangleCornerRadii", "Uniform and per-corner radius values conflict")
+                    }
+                } else scalar?.let { List(4) { _ -> it } }
                 val paints = node["fills"] as? JsonArray
                 val singlePaint = paints?.filter { (it as? JsonObject)?.flag("visible") != false }?.singleOrNull() as? JsonObject
                 val gradient = if (singlePaint?.str("type") == "GRADIENT_LINEAR")
@@ -184,6 +196,8 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
                     if (padding.any { it.signum() != 0 }) put("paddingEdges", JsonArray(padding.map { JsonPrimitive(it.normalized()) }))
                     if (node.flag("clipsContent") == true) put("clip", true)
                     bg?.let { put("background", it) }
+                    if (corners?.any { it.signum() > 0 } == true)
+                        put("cornerRadii", JsonArray(corners.map { JsonPrimitive(it.normalized()) }))
                     gradient?.let { put("linearGradient", it) }
                     putJsonArray("children") {
                         children?.take(150)?.forEachIndexed { index, child ->
