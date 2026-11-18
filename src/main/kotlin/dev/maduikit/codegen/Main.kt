@@ -17,9 +17,11 @@ private const val FIGMA_SCREEN = "FigmaProfileScreen"
 private const val MAX_INPUT_BYTES = 512 * 1024L
 private val json = Json { prettyPrint = true }
 private val idPattern = Regex("[A-Za-z0-9_:.\\-]{1,64}")
+internal val figmaInstanceChildId = Regex("I[0-9]+:[0-9]+(?:;[0-9]+:[0-9]+)+")
+internal val figmaComponentId = Regex("[0-9]+:[0-9]+")
 private val argbPattern = Regex("#[0-9A-Fa-f]{8}")
 private val numericPattern = Regex("-?(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,6})?")
-private val boxFields = setOf("gap", "padding", "paddingEdges", "fillWidth", "width", "height", "background", "clip", "linearGradient")
+private val boxFields = setOf("gap", "padding", "paddingEdges", "fillWidth", "width", "height", "background", "clip", "linearGradient", "mainCentered", "crossCentered")
 private val textFields = setOf("text", "fontSize", "color", "bold", "fillWidth", "width", "height", "lineHeight", "letterSpacing", "fontFamily")
 
 internal data class Problem(val nodeId: String, val path: String, val message: String)
@@ -44,6 +46,9 @@ private data class Node(
     val lineHeight: BigDecimal? = null,
     val letterSpacing: BigDecimal? = null,
     val fontFamily: String? = null,
+    val mainCentered: Boolean = false,
+    val crossCentered: Boolean = false,
+    val sourceComponentId: String? = null,
     val children: List<Node> = emptyList(),
 )
 
@@ -78,8 +83,9 @@ private class Reader {
         if (depth > 24) { error("document", path, "Frame tree depth exceeds 24"); return null }
         val obj = value as? JsonObject ?: run { error("document", path, "Expected node object"); return null }
         val rawId = (obj["id"] as? JsonPrimitive)?.takeIf { it.isString }?.content
-        val id = if (rawId != null && idPattern.matches(rawId)) rawId else path
-        if (id != rawId) error(id, "$path.id", "Expected ID containing 1–64 ASCII letters, numbers, _, :, . or -")
+        val id = if (rawId != null && (idPattern.matches(rawId) ||
+            (rawId.length <= 256 && figmaInstanceChildId.matches(rawId)))) rawId else path
+        if (id != rawId) error(id, "$path.id", "Expected ID containing 1–64 ASCII letters, numbers, _, :, . or -, or a canonical Figma instance descendant ID")
         if (!ids.add(id)) error(id, "$path.id", "Duplicate node ID")
         if (ids.size > 300) { error(id, path, "Frame exceeds 300 nodes"); return null }
 
@@ -171,7 +177,7 @@ private class Reader {
         val type = string("type", true) ?: return null
         when (type) {
             "Column", "Row", "Box" -> {
-                val allowed = if (type == "Box") boxFields - "gap" else boxFields
+                val allowed = if (type == "Box") boxFields - setOf("gap", "mainCentered", "crossCentered") else boxFields + "sourceComponentId"
                 checkKeys(obj, allowed + setOf("id", "type", "children"), id, path)
                 val childField = obj["children"] as? JsonArray
                 if (childField == null) error(id, "$path.children", "Expected children array")
@@ -182,7 +188,12 @@ private class Reader {
                 val children = childField?.mapIndexedNotNull { idx, next ->
                     node(next, "$path.children[$idx]", depth + 1)
                 }.orEmpty()
+                val sourceComponentId = string("sourceComponentId")
+                if (sourceComponentId != null && (sourceComponentId.length > 64 || !figmaComponentId.matches(sourceComponentId)))
+                    error(id, "$path.sourceComponentId", "Expected canonical Figma component ID")
                 return Node(
+                    sourceComponentId = sourceComponentId,
+                    mainCentered = flag("mainCentered"), crossCentered = flag("crossCentered"),
                     id = id, type = type, gap = number("gap", max = 128),
                     padding = number("padding", max = 128), fillWidth = flag("fillWidth"),
                     height = number("height", min = 1), background = color("background"), children = children,
@@ -232,11 +243,14 @@ private fun formatted(value: BigDecimal): String {
 }
 
 private fun fraction(value: BigDecimal) = value.stripTrailingZeros().toPlainString() + "f"
+private fun Node.containsCenter(): Boolean = mainCentered || crossCentered || children.any(Node::containsCenter)
+
 private fun Node.containsGradient(): Boolean = gradient != null || children.any(Node::containsGradient)
 
 private class Emitter(private val function: String) {
     private val lines = mutableListOf<String>()
     val source = linkedMapOf<String, Int>()
+    val sourceComponents = linkedMapOf<String, String>()
 
     fun render(root: Node): String {
         lines += listOf(
@@ -264,6 +278,7 @@ private class Emitter(private val function: String) {
             "import androidx.compose.ui.draw.clipToBounds",
             "import androidx.compose.ui.text.font.FontFamily",
         )
+        if (root.containsCenter()) lines += "import androidx.compose.ui.Alignment"
         if (root.containsGradient()) lines += listOf(
             "import androidx.compose.ui.draw.drawWithCache",
             "import androidx.compose.ui.geometry.Offset",
@@ -292,6 +307,7 @@ private class Emitter(private val function: String) {
     private fun emit(node: Node, depth: Int) {
         val indent = "    ".repeat(depth)
         source[node.id] = lines.size + 1
+        node.sourceComponentId?.let { sourceComponents[node.id] = it }
         val mods = buildList {
             if (node.fillWidth) add("fillMaxWidth()")
             node.width?.let { add("width(${formatted(it)}.dp)") }
@@ -314,7 +330,19 @@ private class Emitter(private val function: String) {
                     modifier?.let { add("modifier = $it") }
                     if (node.type != "Box") {
                         val arrangement = if (node.type == "Row") "horizontalArrangement" else "verticalArrangement"
-                        node.gap?.let { add("$arrangement = Arrangement.spacedBy(${formatted(it)}.dp)") }
+                        val row = node.type == "Row"
+                        val mainAlignment = if (row) "CenterHorizontally" else "CenterVertically"
+                        val crossAlignment = if (row) "CenterVertically" else "CenterHorizontally"
+                        if (node.mainCentered) {
+                            val gap = node.gap ?: BigDecimal.ZERO
+                            add("$arrangement = Arrangement.spacedBy(${formatted(gap)}.dp, Alignment.$mainAlignment)")
+                        } else {
+                            node.gap?.let { add("$arrangement = Arrangement.spacedBy(${formatted(it)}.dp)") }
+                        }
+                        if (node.crossCentered) {
+                            val alignment = if (row) "verticalAlignment" else "horizontalAlignment"
+                            add("$alignment = Alignment.$crossAlignment")
+                        }
                     }
                 }
                 val call = if (params.isEmpty()) node.type else node.type + params.joinToString(", ", "(", ")")
@@ -351,7 +379,7 @@ private fun writeJson(path: Path, value: JsonElement) {
     Files.writeString(path, json.encodeToString(JsonElement.serializer(), value) + "\n", UTF_8)
 }
 
-private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: Boolean = false): Int {
+private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: Boolean = false, flattenInstances: Boolean = false): Int {
     val screen = if (figmaNode == null) NORMALIZED_SCREEN else FIGMA_SCREEN
     val kotlinFile = "$screen.generated.kt"
     if (!Files.isRegularFile(input) || Files.size(input) > MAX_INPUT_BYTES) {
@@ -366,7 +394,7 @@ private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: 
         val value = json.parseToJsonElement(UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString())
         if (figmaNode == null) reader.document(value)
         else {
-            val result = normalizeFigmaNodes(value, figmaNode, fitWidth)
+            val result = normalizeFigmaNodes(value, figmaNode, fitWidth, flattenInstances)
             figmaVersion = result.sourceVersion
             reader.problems.addAll(result.problems)
             if (result.normalized == null || result.problems.isNotEmpty()) null
@@ -411,6 +439,9 @@ private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: 
         put("schemaVersion", 1)
         put("file", kotlinFile)
         putJsonObject("nodeLines") { emitter.source.forEach { (id, line) -> put(id, line) } }
+        if (emitter.sourceComponents.isNotEmpty()) putJsonObject("instanceComponents") {
+            emitter.sourceComponents.forEach { (instanceId, componentId) -> put(instanceId, componentId) }
+        }
     })
     writeJson(output.resolve("manifest.json"), buildJsonObject {
         put("schemaVersion", 1)
@@ -421,6 +452,7 @@ private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: 
             put("inputFormat", "figma-rest-file-nodes")
             put("adapterVersion", FIGMA_ADAPTER_VERSION)
             if (fitWidth) put("rootWidthMode", "fit-host")
+            if (flattenInstances) put("instanceMode", "expanded-visual-v1")
             figmaVersion?.let { put("figmaSourceVersion", it) }
         }
         put("inputSha256", inputHash)
@@ -432,16 +464,19 @@ private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: 
 
 fun main(args: Array<String>) {
     val normalized = args.size == 5 && args[0] == "generate" && args[1] == "--input" && args[3] == "--out"
-    val fitWidth = args.size == 8 && args[7] == "--fit-width"
-    val figma = (args.size == 7 || fitWidth) && args[0] == "generate-figma" && args[1] == "--input" &&
+    val flags = args.drop(7)
+    val fitWidth = "--fit-width" in flags
+    val flattenInstances = "--flatten-instances" in flags
+    val validFlags = flags.size == flags.toSet().size && flags.all { it == "--fit-width" || it == "--flatten-instances" }
+    val figma = (args.size >= 7 && validFlags) && args[0] == "generate-figma" && args[1] == "--input" &&
         args[3] == "--node" && args[5] == "--out"
     if (!normalized && !figma) {
         System.err.println("Usage: maduikit-codegen generate --input <normalized-frame.json> --out <directory>")
-        System.err.println("   or: maduikit-codegen generate-figma --input <file-nodes.json> --node <id> --out <directory> [--fit-width]")
+        System.err.println("   or: maduikit-codegen generate-figma --input <file-nodes.json> --node <id> --out <directory> [--fit-width] [--flatten-instances]")
         exitProcess(2)
     }
     try {
-        if (figma) exitProcess(run(Path(args[2]), Path(args[6]), args[4], fitWidth))
+        if (figma) exitProcess(run(Path(args[2]), Path(args[6]), args[4], fitWidth, flattenInstances))
         exitProcess(run(Path(args[2]), Path(args[4])))
     } catch (err: java.io.IOException) {
         System.err.println("File I/O failed: ${err.javaClass.simpleName}")

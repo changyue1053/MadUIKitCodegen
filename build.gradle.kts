@@ -31,3 +31,8 @@ val gradientSmokeTest by tasks.registering(Exec::class) {
     commandLine("bash", "scripts/gradient-smoke.sh", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
 }
 tasks.check { dependsOn(smokeTest, figmaSmokeTest, gradientSmokeTest) }
+val instanceSmokeTest by tasks.registering(Exec::class) {
+    dependsOn(tasks.installDist)
+    commandLine("bash", "scripts/instance-smoke.sh", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
+}
+tasks.check { dependsOn(instanceSmokeTest) }

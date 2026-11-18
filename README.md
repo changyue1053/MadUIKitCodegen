@@ -34,7 +34,7 @@ diff -r sample-figma-output build/generated/figma-profile
 这份 fixture 是按照 Figma REST 文件节点接口的 `nodes[id].document` 结构编写的**公开合成样例**；不是从真实 Figma 文件下载。输入必须包含指定节点的完整子树；请勿使用截断子树的数据。此仓库不包含网络采集脚本、真实稿件或素材。节点 ID 用 API 的冒号格式（如 `1:2`）。程序不需要 Token、网络或 Figma 的实时连接。
 
 - 输出：`FigmaProfileScreen.generated.kt`、`normalized-frame.json`、`manifest.json`、`source-map.json`、`diagnostics.json`。清单含输入 SHA-256、源版本（响应里提供时）、适配器版本、生成代码哈希；源码映射保留可见图层的原始 id。Demo 引用 `dev.maduikit.demo.generated.FigmaProfileScreen()`。
-- 支持：横/纵向、不换行、起点对齐的 Auto Layout FRAME，常规固定/HUG 尺寸、纵向父节点下子节点的横向 FILL、不对称内边距、可选裁切、单色 RGBA 填充、真实 TEXT 文本（泛型字族、400/700、常规字间距和部分行高）。显式隐藏的子树不参与布局或生成。设计坐标按 1 设计 px → 1 dp/sp 解释，保留最多 6 位小数；颜色转 8 位 ARGB。
+- 支持：横/纵向、不换行、起点或居中对齐的 Auto Layout FRAME，常规固定/HUG 尺寸、纵向父节点下子节点的横向 FILL、不对称内边距、可选裁切、单色 RGBA 填充、真实 TEXT 文本（泛型字族、400/700、常规字间距和部分行高）。显式隐藏的子树不参与布局或生成。设计坐标按 1 设计 px → 1 dp/sp 解释，保留最多 6 位小数；颜色转 8 位 ARGB。
 - P1 路径不支持：图片填充、矢量、常规渐变（P5 的窄范围轴对齐扩展见下文）、阴影、描边、多重混合、旋转/绝对定位、复杂对齐、Rich Text、字体素材及交互推断等。命名字体（包括 Inter）需要明确字体素材/映射，当前严格拒绝，不用另一字体替换。合成样例中的 CSS 泛型字族是用于验证流程的输入值，不代表真实设计已复刻该字体。
 - 超出范围的可见节点或已识别但未支持的视觉属性返回退出码 2，报告节点 ID 与字段路径；新输出目录不会得到成功产物。前次结果如果仍在原目录，不是当次产物，应以退出码和输入哈希为准。流程演示不等于实稿验收或像素级一致。
 
@@ -63,3 +63,32 @@ diff -r sample-gradient-output build/generated/gradient
 其它原有未实现特性仍严格拒绝并报告节点。P5 带来的新 IR 字段不应直接交给
 尚未支持的 ArkUI emitter。渐变在真实 Figma 与各端渲染器之间的插值、字体及
 抗锯齿一致性尚未验收。
+
+## 可选：展开实例与居中 Auto Layout
+
+`generate-figma --flatten-instances` 将已带完整子树的 Figma
+`INSTANCE` 按已有 Auto Layout 规则转换成 Compose 容器。**默认仍拒绝
+可见的 INSTANCE**。该选项只使用当前输入里的可见子节点和已解析的
+文本样式；不查询组件库、不实例化运行时组件、不推断交互或覆盖规则，
+也不把 Figma 组件绑定成 MadUIKit 组件。没有子节点的实例、格式无效
+的组件 ID、实例上的非空交互定义以及不支持的可见子节点会失败，不会
+悄悄生成占位组件。调用方须提供完整子树：工具无法判断一个非空但被截断的输入是否完整。Frame / 文本 / 填充仍需符合前述支持边界。
+
+普通 Auto Layout Frame 与展开的实例都接受主、次轴
+`CENTER`，不需要额外的居中开关。`MIN` 仍按原方式生成，
+`SPACE_BETWEEN`、环绕、基线等其他对齐仍不在支持范围。
+居中是布局对齐，不等于文字字形或排版特性的逐像素还原。
+该里程碑不验收真实稿件、Android/iOS/HarmonyOS 渲染或像素一致性。
+
+```sh
+./gradlew check installDist
+build/install/MadUIKitCodegen/bin/MadUIKitCodegen generate-figma \
+  --input fixtures/figma/instance.file-nodes.json --node 10:1 \
+  --out build/generated/instance --flatten-instances
+```
+
+例子是手工构造的数据，完全离线。可与 `--fit-width` 合用。
+开启实例展开时，清单记录 `instanceMode: expanded-visual-v1`；
+对于展开的实例，源码映射另外记录 `instanceComponents`
+（实例 ID 到源组件 ID），仅作诊断。真实输入及其生成输出可能包含
+设计文字和标识，公开分享前请检查内容。

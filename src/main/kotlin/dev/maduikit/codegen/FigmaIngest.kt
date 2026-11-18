@@ -8,10 +8,10 @@ internal const val FIGMA_ADAPTER_VERSION = 2
 
 internal data class FigmaResult(val normalized: JsonObject?, val sourceVersion: String?, val problems: List<Problem>)
 
-internal fun normalizeFigmaNodes(value: JsonElement, target: String, fitWidth: Boolean = false): FigmaResult =
-    FigmaNodesReader(fitWidth).read(value, target)
+internal fun normalizeFigmaNodes(value: JsonElement, target: String, fitWidth: Boolean = false, flattenInstances: Boolean = false): FigmaResult =
+    FigmaNodesReader(fitWidth, flattenInstances).read(value, target)
 
-private class FigmaNodesReader(private val fitWidth: Boolean) {
+private class FigmaNodesReader(private val fitWidth: Boolean, private val flattenInstances: Boolean) {
     private val problems = mutableListOf<Problem>()
     private var visited = 0
 
@@ -111,15 +111,25 @@ private class FigmaNodesReader(private val fitWidth: Boolean) {
         }
 
         return when (val type = node.str("type")) {
-            "FRAME" -> {
+            "FRAME", "INSTANCE" -> {
+                val componentId = if (type == "INSTANCE") {
+                    if (!flattenInstances) {
+                        fail("type", "Unsupported Figma node type: INSTANCE (opt in with --flatten-instances for expanded visual-only instances)")
+                        return null
+                    }
+                    val origin = node.str("componentId")
+                    if (origin == null || origin.length > 64 || !figmaComponentId.matches(origin))
+                        fail("componentId", "Expected canonical component ID for expanded instance")
+                    origin
+                } else null
                 val layout = node.str("layoutMode")
                 if (layout !in setOf("VERTICAL", "HORIZONTAL")) {
                     fail("layoutMode", "Only horizontal or vertical Auto Layout frames are supported")
                     return null
                 }
                 expect("layoutWrap", setOf("NO_WRAP"))
-                expect("primaryAxisAlignItems", setOf("MIN"))
-                expect("counterAxisAlignItems", setOf("MIN"))
+                expect("primaryAxisAlignItems", setOf("MIN", "CENTER"))
+                expect("counterAxisAlignItems", setOf("MIN", "CENTER"))
                 if (node["itemReverseZIndex"] != null && node.flag("itemReverseZIndex") != false)
                     fail("itemReverseZIndex", "Reverse stacking is not supported")
                 if (node["clipsContent"] != null && node.flag("clipsContent") == null) fail("clipsContent", "Expected boolean")
@@ -137,6 +147,12 @@ private class FigmaNodesReader(private val fitWidth: Boolean) {
                 val padding = listOf("paddingLeft", "paddingTop", "paddingRight", "paddingBottom").map { number(it) }
                 val children = node["children"] as? JsonArray
                 if (children == null || children.size > 150) fail("children", "Expected complete children array of at most 150 entries")
+                if (type == "INSTANCE" && children.isNullOrEmpty())
+                    fail("children", "Expanded visual instance must include a non-empty children array; collapsed instances are not supported")
+                if (type == "INSTANCE") {
+                    // Do not silently turn a prototype trigger into an apparently complete component.
+                    absent("interactions"); absent("reactions")
+                }
                 fun legacy(field: String): String? = when (node.str(field)) {
                     "AUTO" -> "HUG"; "FIXED" -> "FIXED"; null -> null; else -> { fail(field, "Unsupported axis sizing"); null }
                 }
@@ -152,6 +168,7 @@ private class FigmaNodesReader(private val fitWidth: Boolean) {
                 }
                 buildJsonObject {
                     put("id", id)
+                    componentId?.let { put("sourceComponentId", it) }
                     put("type", if (layout == "VERTICAL") "Column" else "Row")
                     if (root && fitWidth) {
                         if (h != "FIXED" || layout != "VERTICAL") fail("layoutSizingHorizontal",
@@ -162,6 +179,8 @@ private class FigmaNodesReader(private val fitWidth: Boolean) {
                         put("fillWidth", true)
                     } else putSizing(this, h, v)
                     put("gap", number("itemSpacing").normalized())
+                    if (node.str("primaryAxisAlignItems") == "CENTER") put("mainCentered", true)
+                    if (node.str("counterAxisAlignItems") == "CENTER") put("crossCentered", true)
                     if (padding.any { it.signum() != 0 }) put("paddingEdges", JsonArray(padding.map { JsonPrimitive(it.normalized()) }))
                     if (node.flag("clipsContent") == true) put("clip", true)
                     bg?.let { put("background", it) }
