@@ -1,0 +1,24 @@
+{
+    "schemaVersion": 1,
+    "generatorVersion": "0.3.0-p5-preview",
+    "target": "cmp",
+    "frameId": "42:1",
+    "inputFormat": "figma-rest-file-nodes",
+    "adapterVersion": 2,
+    "instanceMode": "expanded-visual-v1",
+    "figmaSourceVersion": "synthetic-wrapped-icon-v1",
+    "inputSha256": "a06afe421eed8345d7a63fbc5b33c8cfe63d378d78e8e0bcd5516fea079348b5",
+    "sdkRequired": false,
+    "assetMapSha256": "e937ffca6fa99116120132a581568ad2bc0be2f29966cdebaebdd6d9f544f721",
+    "decorativeAsset": {
+        "nodeId": "I42:3;43:6;43:7",
+        "file": "composeResources/drawable/mad_icon_synthetic_badge.png",
+        "width": 20,
+        "height": 20,
+        "sha256": "c4788aac894a32295cc8f9110724a6a8c000fadb15ba56637b060a9d6bf34299"
+    },
+    "files": {
+        "FigmaProfileScreen.generated.kt": "64b4de5d4b6301da190aad6d1aa35da453e29cd6f9093f19265aa9f612982505",
+        "composeResources/drawable/mad_icon_synthetic_badge.png": "c4788aac894a32295cc8f9110724a6a8c000fadb15ba56637b060a9d6bf34299"
+    }
+}

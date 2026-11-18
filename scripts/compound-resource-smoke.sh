@@ -30,7 +30,7 @@ for label in ("container-frame","orphan","foreign-owner","extra-hop","bad-id","w
     if label=="container-frame": inst.update(type="FRAME")
     if label=="orphan": children[1]=leaf
     if label=="foreign-owner": mapping["nodeId"]=leaf["id"]="I40:8;41:7"
-    if label=="extra-hop": mapping["nodeId"]=leaf["id"]="I40:3;41:8;41:7"
+    if label=="extra-hop": mapping["nodeId"]=leaf["id"]="I40:3;41:8;41:9;41:7"
     if label=="bad-id": mapping["nodeId"]=leaf["id"]="I40:3;../41:7"
     if label=="wrapper":
         inst["children"]=[{"id":"I40:3;41:9","type":"FRAME","layoutMode":"VERTICAL",
@@ -73,6 +73,6 @@ for t in container-frame orphan foreign-owner extra-hop bad-id wrapper hidden in
     negative "$t" "$tmp/$t/frame.json" "$tmp/$t/map.json" --flatten-instances
 done
 grep -Fq 'matching, explicitly expanded INSTANCE' "$tmp/fail-foreign-owner/diagnostics.json"
-grep -Fq 'single-hop expanded instance child ID' "$tmp/fail-extra-hop/diagnostics.json"
+grep -Fq 'direct or single-wrapper expanded instance child ID' "$tmp/fail-extra-hop/diagnostics.json"
 grep -Fq 'non-root VECTOR leaf' "$tmp/fail-instance-leaf/diagnostics.json"
 echo "Compound resource binding smoke tests passed."

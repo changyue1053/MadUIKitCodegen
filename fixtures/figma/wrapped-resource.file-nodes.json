@@ -1,0 +1,151 @@
+{
+  "name": "Synthetic wrapped resource",
+  "version": "synthetic-wrapped-icon-v1",
+  "nodes": {
+    "42:1": {
+      "document": {
+        "type": "FRAME",
+        "id": "42:1",
+        "name": "Synthetic decorative icon in an inert wrapper",
+        "layoutMode": "VERTICAL",
+        "layoutSizingHorizontal": "FIXED",
+        "layoutSizingVertical": "FIXED",
+        "absoluteBoundingBox": {
+          "width": 246,
+          "height": 122
+        },
+        "paddingLeft": 16,
+        "paddingTop": 14,
+        "itemSpacing": 12,
+        "fills": [
+          {
+            "type": "SOLID",
+            "color": {
+              "r": 0.93,
+              "g": 0.96,
+              "b": 0.98,
+              "a": 1
+            }
+          }
+        ],
+        "children": [
+          {
+            "type": "TEXT",
+            "id": "42:2",
+            "characters": "Wrapped icon",
+            "style": {
+              "fontFamily": "sans-serif",
+              "fontSize": 20,
+              "fontWeight": 700
+            },
+            "layoutSizingHorizontal": "HUG",
+            "layoutSizingVertical": "HUG",
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0.11,
+                  "g": 0.19,
+                  "b": 0.26,
+                  "a": 1
+                }
+              }
+            ]
+          },
+          {
+            "id": "42:3",
+            "type": "INSTANCE",
+            "componentId": "43:2",
+            "name": "Synthetic frame instance",
+            "layoutMode": "HORIZONTAL",
+            "layoutSizingHorizontal": "FIXED",
+            "layoutSizingVertical": "FIXED",
+            "absoluteBoundingBox": {
+              "width": 20,
+              "height": 20
+            },
+            "children": [
+              {
+                "type": "FRAME",
+                "id": "I42:3;43:6",
+                "name": "Transparent wrapper",
+                "layoutMode": "VERTICAL",
+                "layoutSizingHorizontal": "FIXED",
+                "layoutSizingVertical": "FIXED",
+                "absoluteBoundingBox": {
+                  "x": 61,
+                  "y": 27,
+                  "width": 20,
+                  "height": 20
+                },
+                "children": [
+                  {
+                    "type": "VECTOR",
+                    "id": "I42:3;43:6;43:7",
+                    "name": "Synthetic badge",
+                    "layoutSizingHorizontal": "FIXED",
+                    "layoutSizingVertical": "FIXED",
+                    "absoluteBoundingBox": {
+                      "x": 61,
+                      "y": 27,
+                      "width": 20,
+                      "height": 20
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "color": {
+                          "r": 0.17,
+                          "g": 0.4,
+                          "b": 0.6,
+                          "a": 1
+                        }
+                      }
+                    ],
+                    "relativeTransform": [
+                      [
+                        1,
+                        0,
+                        0
+                      ],
+                      [
+                        0,
+                        1,
+                        0
+                      ]
+                    ]
+                  }
+                ],
+                "fills": [],
+                "clipsContent": false
+              }
+            ]
+          },
+          {
+            "type": "TEXT",
+            "id": "42:4",
+            "characters": "Typed drawable, 20 dp",
+            "style": {
+              "fontFamily": "sans-serif",
+              "fontSize": 13,
+              "fontWeight": 400
+            },
+            "layoutSizingHorizontal": "HUG",
+            "layoutSizingVertical": "HUG",
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0.11,
+                  "g": 0.19,
+                  "b": 0.26,
+                  "a": 1
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

@@ -170,3 +170,18 @@ build/install/MadUIKitCodegen/bin/MadUIKitCodegen generate-figma \
   --flatten-instances --asset-map fixtures/figma/compound-resource/asset-map.json \
   --out build/generated/compound-icon
 ```
+
+单层透明包装框也可显式绑定：如 `I42:3;43:6;43:7`，必须在展开的
+`42:3` 实例下找到**直接**的 `I42:3;43:6` FRAME，再找到其唯一直接可见
+子节点 `I42:3;43:6;43:7` VECTOR。FRAME 只接受固定 Auto Layout、
+明确相同的 x/y/宽/高、无填充/背景/描边/效果/裁剪/交互，
+不接受非零间距、内边距、变换偏移、未知字段或额外（即使隐藏）子节点。
+包装框仍生成常规 Compose 容器，不替换组件或任何控制交互。任何更多层级、
+未知真实稿结构或不全数据均未验收。
+
+```sh
+build/install/MadUIKitCodegen/bin/MadUIKitCodegen generate-figma \
+  --input fixtures/figma/wrapped-resource.file-nodes.json --node 42:1 \
+  --flatten-instances --asset-map fixtures/figma/wrapped-resource/asset-map.json \
+  --out build/generated/wrapped-icon
+```

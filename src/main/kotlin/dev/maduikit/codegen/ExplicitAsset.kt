@@ -10,8 +10,8 @@ import java.nio.file.Path
 import java.util.zip.CRC32
 import javax.imageio.ImageIO
 
-// Narrow subset of REST compound IDs: one canonical expanded owner and one canonical child.
-internal val decorativeInstanceChildId = Regex("I([0-9]+:[0-9]+);[0-9]+:[0-9]+")
+// One canonical expanded owner, one child, and optionally one explicitly validated wrapper hop.
+internal val decorativeInstanceChildId = Regex("I([0-9]+:[0-9]+);([0-9]+:[0-9]+)(?:;([0-9]+:[0-9]+))?")
 
 internal data class ExplicitAsset(
     val nodeId: String,
@@ -22,6 +22,9 @@ internal data class ExplicitAsset(
     val hash: String,
     val mapHash: String,
 ) {
+    val route = decorativeInstanceChildId.matchEntire(nodeId)
+    val expandedOwnerId get() = route?.groupValues?.get(1)
+    val inertWrapperId get() = route?.let { if (it.groupValues[3].isEmpty()) null else "I${it.groupValues[1]};${it.groupValues[2]}" }
     val outputPath get() = "composeResources/drawable/$resourceName.png"
 }
 
@@ -45,7 +48,7 @@ internal fun readExplicitAsset(path: Path): ExplicitAsset {
     val nodeId = string("nodeId")
     require(nodeId != null && nodeId.length <= 64 && (figmaComponentId.matches(nodeId) ||
         decorativeInstanceChildId.matches(nodeId))) {
-        "Asset map requires a canonical Figma node ID or a single-hop expanded instance child ID"
+        "Asset map requires a canonical Figma node ID or a direct or single-wrapper expanded instance child ID"
     }
     val file = string("file")
     require(file != null && Regex("mad_icon_[a-z][a-z0-9_]{0,38}\\.png").matches(file)) {

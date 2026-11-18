@@ -15,6 +15,7 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
     private val problems = mutableListOf<Problem>()
     private var visited = 0
     private var assetUsed = false
+    private var assetWrapperUsed = false
 
     fun read(value: JsonElement, target: String): FigmaResult {
         val idPattern = Regex("[0-9]+:[0-9]+")
@@ -49,7 +50,7 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
 
     private fun convert(
         node: JsonObject, path: String, parent: String?, depth: Int, root: Boolean = false,
-        expandedParentId: String? = null,
+        expandedParentId: String? = null, validatedWrapperId: String? = null,
     ): JsonObject? {
         // Hidden descendants do not contribute pixels or layout in a Figma auto-layout frame.
         if (node.flag("visible") == false) return null
@@ -116,11 +117,71 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
             if (raw !is JsonArray || raw.any { (it as? JsonObject)?.flag("visible") != false }) fail(field, "Visible $field are not supported")
         }
 
+        val isAssetWrapper = asset != null && asset.inertWrapperId == id
+        if (asset != null && isAssetWrapper) {
+            if (assetWrapperUsed) fail("id", "Bound icon wrapper occurs more than once")
+            assetWrapperUsed = true
+            if (node.str("type") != "FRAME" || expandedParentId != asset.expandedOwnerId) {
+                fail("id", "Bound icon wrapper must be a direct FRAME child of its matching expanded INSTANCE")
+                return null
+            }
+            val allowed = setOf(
+                "id", "name", "type", "visible", "layoutMode", "layoutSizingHorizontal", "layoutSizingVertical",
+                "primaryAxisSizingMode", "counterAxisSizingMode", "primaryAxisAlignItems", "counterAxisAlignItems",
+                "layoutWrap", "counterAxisAlignContent", "layoutPositioning", "layoutAlign", "layoutGrow",
+                "absoluteBoundingBox", "relativeTransform", "children", "opacity", "blendMode", "rotation",
+                "fills", "background", "strokes", "effects", "clipsContent", "isMask", "itemReverseZIndex",
+                "paddingTop", "paddingLeft", "paddingBottom", "paddingRight", "itemSpacing",
+                "cornerRadius", "cornerSmoothing", "rectangleCornerRadii", "interactions", "reactions",
+            )
+            for (field in (node.keys - allowed).sorted()) fail(field, "Unknown field on inert icon wrapper")
+            for (field in listOf("fills", "background", "strokes", "effects", "rectangleCornerRadii",
+                "interactions", "reactions")) absent(field)
+            for (field in listOf("paddingTop", "paddingLeft", "paddingBottom", "paddingRight", "itemSpacing",
+                "cornerRadius", "cornerSmoothing", "layoutGrow")) zero(field)
+            for (field in listOf("clipsContent", "isMask", "itemReverseZIndex"))
+                if (node[field] != null && node.flag(field) != false) fail(field, "Inert icon wrapper requires false")
+            for (axis in listOf("layoutSizingHorizontal", "layoutSizingVertical"))
+                if (node.str(axis) != "FIXED") fail(axis, "Inert icon wrapper requires explicit FIXED axes")
+            expect("layoutAlign", setOf("INHERIT"))
+            expect("primaryAxisSizingMode", setOf("FIXED"))
+            expect("counterAxisSizingMode", setOf("FIXED"))
+            expect("primaryAxisAlignItems", setOf("MIN"))
+            expect("counterAxisAlignItems", setOf("MIN"))
+            expect("counterAxisAlignContent", setOf("AUTO"))
+            expect("layoutWrap", setOf("NO_WRAP"))
+            expect("blendMode", setOf("NORMAL"))
+            val leaf = (node["children"] as? JsonArray)?.singleOrNull() as? JsonObject
+            if (leaf == null || leaf.str("id") != asset.nodeId || leaf.str("type") != "VECTOR" || leaf.flag("visible") == false) {
+                fail("children", "Inert icon wrapper requires exactly one direct visible mapped VECTOR child")
+                return null
+            }
+            val outer = node["absoluteBoundingBox"] as? JsonObject
+            val inner = leaf["absoluteBoundingBox"] as? JsonObject
+            for (edge in listOf("x", "y", "width", "height")) {
+                val v = outer?.num(edge)
+                val w = inner?.num(edge)
+                if (v == null || w == null || v.compareTo(w) != 0)
+                    fail("absoluteBoundingBox.$edge", "Inert icon wrapper and its mapped leaf must have identical explicit bounds")
+            }
+            for ((pathName, local) in listOf("relativeTransform" to transform, "children[0].relativeTransform" to leaf["relativeTransform"])) {
+                if (local == null || local == JsonNull) continue // Explicit source bounds above still required.
+                val rows = (local as? JsonArray)?.map { it as? JsonArray }
+                if (rows?.getOrNull(0)?.getOrNull(2)?.decimal()?.signum() != 0 ||
+                    rows?.getOrNull(1)?.getOrNull(2)?.decimal()?.signum() != 0)
+                    fail(pathName, "Inert icon wrapper and mapped leaf do not allow a local transform offset")
+            }
+        }
+
         if (asset != null && asset.nodeId == id) {
             if (assetUsed) fail("id", "Mapped node appears more than once")
             assetUsed = true
-            val compound = decorativeInstanceChildId.matchEntire(id)
-            if (compound != null && compound.groupValues[1] != expandedParentId) {
+            val wrapper = asset.inertWrapperId
+            if (wrapper != null && validatedWrapperId != wrapper) {
+                fail("id", "Bound compound VECTOR is not the direct child of its validated inert wrapper")
+                return null
+            }
+            if (wrapper == null && asset.expandedOwnerId != null && asset.expandedOwnerId != expandedParentId) {
                 fail("id", "Bound compound VECTOR must directly belong to its matching, explicitly expanded INSTANCE")
                 return null
             }
@@ -264,7 +325,8 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
                         children?.take(150)?.forEachIndexed { index, child ->
                             if (visited >= 300) fail("children", "Frame exceeds 300 nodes")
                             else if (child is JsonObject) convert(child, "$path.children[$index]", layout, depth + 1,
-                                expandedParentId = id.takeIf { type == "INSTANCE" && figmaComponentId.matches(it) })?.let { add(it) }
+                                expandedParentId = id.takeIf { type == "INSTANCE" && figmaComponentId.matches(it) },
+                                validatedWrapperId = id.takeIf { isAssetWrapper })?.let { add(it) }
                             else fail("children[$index]", "Expected child node object")
                         }
                     }
