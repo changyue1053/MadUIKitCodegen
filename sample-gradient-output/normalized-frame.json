@@ -1,0 +1,145 @@
+{
+    "schemaVersion": 1,
+    "frame": {
+        "id": "3:1",
+        "type": "Column",
+        "height": 330,
+        "fillWidth": true,
+        "gap": 12,
+        "paddingEdges": [
+            16,
+            16,
+            16,
+            16
+        ],
+        "clip": true,
+        "background": "#FFEDF2FA",
+        "children": [
+            {
+                "id": "3:2",
+                "type": "Text",
+                "text": "MadUIKit · 渐变拓展",
+                "fontSize": 21,
+                "fontFamily": "SansSerif",
+                "bold": true,
+                "lineHeight": 26,
+                "color": "#FF121A2B"
+            },
+            {
+                "id": "3:3",
+                "type": "Column",
+                "fillWidth": true,
+                "height": 106,
+                "gap": 14,
+                "paddingEdges": [
+                    18,
+                    18,
+                    18,
+                    18
+                ],
+                "clip": true,
+                "linearGradient": {
+                    "axis": "x",
+                    "start": 0,
+                    "end": 1,
+                    "stops": [
+                        {
+                            "position": 0,
+                            "color": "#FF1F3687"
+                        },
+                        {
+                            "position": 0.48,
+                            "color": "#FF542691"
+                        },
+                        {
+                            "position": 1,
+                            "color": "#FF0D6B6B"
+                        }
+                    ]
+                },
+                "children": [
+                    {
+                        "id": "3:4",
+                        "type": "Text",
+                        "text": "渐变与宽度随宿主",
+                        "fontSize": 26,
+                        "fontFamily": "SansSerif",
+                        "bold": true,
+                        "lineHeight": 31,
+                        "color": "#FFFFFFFF"
+                    },
+                    {
+                        "id": "3:5",
+                        "type": "Text",
+                        "text": "Figma REST 格式的第二张合成页面",
+                        "fontSize": 13,
+                        "fontFamily": "SansSerif",
+                        "lineHeight": 18,
+                        "color": "#FFE8F2FF"
+                    }
+                ]
+            },
+            {
+                "id": "3:6",
+                "type": "Column",
+                "fillWidth": true,
+                "height": 96,
+                "gap": 8,
+                "paddingEdges": [
+                    13,
+                    13,
+                    13,
+                    13
+                ],
+                "clip": true,
+                "linearGradient": {
+                    "axis": "y",
+                    "start": 1,
+                    "end": 0,
+                    "stops": [
+                        {
+                            "position": 0,
+                            "color": "#FFC4EBE8"
+                        },
+                        {
+                            "position": 1,
+                            "color": "#FFFAFCFF"
+                        }
+                    ]
+                },
+                "children": [
+                    {
+                        "id": "3:7",
+                        "type": "Text",
+                        "text": "纵向渐变 · 高保真试验",
+                        "fontSize": 16,
+                        "fontFamily": "SansSerif",
+                        "bold": true,
+                        "lineHeight": 21,
+                        "color": "#FF121A2B"
+                    },
+                    {
+                        "id": "3:8",
+                        "type": "Text",
+                        "fillWidth": true,
+                        "text": "两个宿主宽度，同一份可编译的 CMP 生成代码。",
+                        "fontSize": 13,
+                        "fontFamily": "SansSerif",
+                        "lineHeight": 18,
+                        "color": "#FF263D57"
+                    }
+                ]
+            },
+            {
+                "id": "3:9",
+                "type": "Text",
+                "fillWidth": true,
+                "text": "公开合成稿 · 尚未验收真实 Figma 参考图",
+                "fontSize": 11,
+                "fontFamily": "SansSerif",
+                "lineHeight": 16,
+                "color": "#FF263D57"
+            }
+        ]
+    }
+}

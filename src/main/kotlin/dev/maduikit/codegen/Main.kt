@@ -1,0 +1,453 @@
+package dev.maduikit.codegen
+
+import kotlinx.serialization.json.*
+import java.math.BigDecimal
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.StandardCharsets.UTF_8
+import java.nio.file.Files
+import java.nio.file.Path
+import java.security.MessageDigest
+import kotlin.io.path.Path
+import kotlin.system.exitProcess
+
+private const val GENERATOR_VERSION = "0.3.0-p5-preview"
+private const val NORMALIZED_SCREEN = "SyntheticProfileScreen"
+private const val FIGMA_SCREEN = "FigmaProfileScreen"
+private const val MAX_INPUT_BYTES = 512 * 1024L
+private val json = Json { prettyPrint = true }
+private val idPattern = Regex("[A-Za-z0-9_:.\\-]{1,64}")
+private val argbPattern = Regex("#[0-9A-Fa-f]{8}")
+private val numericPattern = Regex("-?(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,6})?")
+private val boxFields = setOf("gap", "padding", "paddingEdges", "fillWidth", "width", "height", "background", "clip", "linearGradient")
+private val textFields = setOf("text", "fontSize", "color", "bold", "fillWidth", "width", "height", "lineHeight", "letterSpacing", "fontFamily")
+
+internal data class Problem(val nodeId: String, val path: String, val message: String)
+private data class Gradient(val axis: String, val start: BigDecimal, val end: BigDecimal,
+    val stops: List<Pair<BigDecimal, String>>)
+private data class Node(
+    val id: String,
+    val type: String,
+    val text: String? = null,
+    val gap: BigDecimal? = null,
+    val padding: BigDecimal? = null,
+    val fillWidth: Boolean = false,
+    val height: BigDecimal? = null,
+    val background: String? = null,
+    val gradient: Gradient? = null,
+    val fontSize: BigDecimal? = null,
+    val color: String? = null,
+    val bold: Boolean = false,
+    val width: BigDecimal? = null,
+    val paddingEdges: List<BigDecimal>? = null,
+    val clip: Boolean = false,
+    val lineHeight: BigDecimal? = null,
+    val letterSpacing: BigDecimal? = null,
+    val fontFamily: String? = null,
+    val children: List<Node> = emptyList(),
+)
+
+private class Reader {
+    val problems = mutableListOf<Problem>()
+    private val ids = mutableSetOf<String>()
+
+    private fun error(id: String, path: String, message: String) {
+        problems += Problem(id, path, message)
+    }
+
+    private fun checkKeys(obj: JsonObject, allowed: Set<String>, id: String, path: String) {
+        (obj.keys - allowed).sorted().forEach {
+            error(id, "$path.$it", "Unsupported field")
+        }
+    }
+
+    fun document(value: JsonElement): Node? {
+        val root = value as? JsonObject ?: run { error("document", "$", "Expected document object"); return null }
+        checkKeys(root, setOf("schemaVersion", "frame"), "document", "$")
+        if (root["schemaVersion"] != JsonPrimitive(1)) {
+            error("document", "$.schemaVersion", "Only integer schemaVersion 1 is supported")
+        }
+        val frame = node(root["frame"], "$.frame", 0)
+        if (frame != null && frame.type !in setOf("Column", "Row")) {
+            error(frame.id, "$.frame.type", "The root Frame must be a Column or a Row")
+        }
+        return frame
+    }
+
+    private fun node(value: JsonElement?, path: String, depth: Int): Node? {
+        if (depth > 24) { error("document", path, "Frame tree depth exceeds 24"); return null }
+        val obj = value as? JsonObject ?: run { error("document", path, "Expected node object"); return null }
+        val rawId = (obj["id"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        val id = if (rawId != null && idPattern.matches(rawId)) rawId else path
+        if (id != rawId) error(id, "$path.id", "Expected ID containing 1–64 ASCII letters, numbers, _, :, . or -")
+        if (!ids.add(id)) error(id, "$path.id", "Duplicate node ID")
+        if (ids.size > 300) { error(id, path, "Frame exceeds 300 nodes"); return null }
+
+        fun string(name: String, required: Boolean = false): String? {
+            val field = obj[name]
+            if (field == null && !required) return null
+            val text = (field as? JsonPrimitive)?.takeIf { it.isString }?.content
+            if (text == null || text.length > 2000) {
+                error(id, "$path.$name", "Expected string no longer than 2000 characters")
+                return null
+            }
+            return text
+        }
+
+        fun number(name: String, min: Int = 0, max: Int = 2048): BigDecimal? {
+            val field = obj[name] ?: return null
+            val raw = (field as? JsonPrimitive)?.takeUnless { it.isString }?.content
+            val result = raw?.takeIf(numericPattern::matches)?.toBigDecimalOrNull()
+            if (result == null || result !in min.toBigDecimal()..max.toBigDecimal()) {
+                error(id, "$path.$name", "Expected a decimal number in $min..$max with at most six fractional digits")
+                return null
+            }
+            return result
+        }
+
+        fun flag(name: String): Boolean {
+            val field = obj[name] ?: return false
+            return when (field) {
+                JsonPrimitive(true) -> true
+                JsonPrimitive(false) -> false
+                else -> { error(id, "$path.$name", "Expected boolean"); false }
+            }
+        }
+
+        fun color(name: String): String? {
+            val value = string(name) ?: return null
+            if (!argbPattern.matches(value)) {
+                error(id, "$path.$name", "Expected #AARRGGBB"); return null
+            }
+            return value.drop(1).uppercase()
+        }
+
+        fun edges(): List<BigDecimal>? {
+            val raw = obj["paddingEdges"] ?: return null
+            val values = (raw as? JsonArray)?.map { field ->
+                (field as? JsonPrimitive)?.takeUnless { it.isString }?.content
+                    ?.takeIf(numericPattern::matches)?.toBigDecimalOrNull()
+            }
+            if (values == null || values.size != 4 || values.any { it == null || it !in 0.toBigDecimal()..128.toBigDecimal() }) {
+                error(id, "$path.paddingEdges", "Expected [left, top, right, bottom] padding in 0..128")
+                return null
+            }
+            if (obj["padding"] != null) error(id, "$path.paddingEdges", "padding and paddingEdges are mutually exclusive")
+            return values.filterNotNull()
+        }
+
+        fun gradient(): Gradient? {
+            val value = obj["linearGradient"] ?: return null
+            val raw = value as? JsonObject
+            val gradientPath = "$path.linearGradient"
+            fun reject(message: String): Nothing? { error(id, gradientPath, message); return null }
+            if (raw == null) return reject("Expected gradient object")
+            checkKeys(raw, setOf("axis", "start", "end", "stops"), id, gradientPath)
+            if (obj["background"] != null) return reject("Background and linearGradient are mutually exclusive")
+            val axis = (raw["axis"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            fun unit(element: JsonElement?): BigDecimal? = (element as? JsonPrimitive)?.takeUnless { it.isString }
+                ?.content?.takeIf(numericPattern::matches)?.toBigDecimalOrNull()
+                ?.takeIf { it in BigDecimal.ZERO..BigDecimal.ONE }
+            val start = unit(raw["start"])
+            val end = unit(raw["end"])
+            if (axis !in setOf("x", "y") || start == null || end == null || start.compareTo(end) == 0)
+                return reject("Expected x/y axis and unequal start/end fractions in 0..1")
+            val entries = raw["stops"] as? JsonArray
+            if (entries == null || entries.size !in 2..16) return reject("Expected 2 to 16 color stops")
+            val stops = mutableListOf<Pair<BigDecimal, String>>()
+            for ((index, element) in entries.withIndex()) {
+                val entry = element as? JsonObject ?: return reject("Invalid stop object")
+                checkKeys(entry, setOf("position", "color"), id, "$gradientPath.stops[$index]")
+                val position = unit(entry["position"])
+                val color = (entry["color"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+                if (position == null || color == null || !argbPattern.matches(color) ||
+                    stops.lastOrNull()?.first?.let { position <= it } == true)
+                    return reject("Expected strictly ascending fractions and #AARRGGBB stop colors")
+                stops += position to color.drop(1).uppercase()
+            }
+            return Gradient(checkNotNull(axis), start, end, stops)
+        }
+
+        val type = string("type", true) ?: return null
+        when (type) {
+            "Column", "Row", "Box" -> {
+                val allowed = if (type == "Box") boxFields - "gap" else boxFields
+                checkKeys(obj, allowed + setOf("id", "type", "children"), id, path)
+                val childField = obj["children"] as? JsonArray
+                if (childField == null) error(id, "$path.children", "Expected children array")
+                if (childField != null && childField.size > 150) {
+                    error(id, "$path.children", "Each node supports at most 150 children")
+                    return null
+                }
+                val children = childField?.mapIndexedNotNull { idx, next ->
+                    node(next, "$path.children[$idx]", depth + 1)
+                }.orEmpty()
+                return Node(
+                    id = id, type = type, gap = number("gap", max = 128),
+                    padding = number("padding", max = 128), fillWidth = flag("fillWidth"),
+                    height = number("height", min = 1), background = color("background"), children = children,
+                    gradient = gradient(), width = number("width", min = 1), paddingEdges = edges(), clip = flag("clip"),
+                )
+            }
+            "Text" -> {
+                checkKeys(obj, textFields + setOf("id", "type"), id, path)
+                val family = string("fontFamily")
+                if (family != null && family !in setOf("SansSerif", "Serif", "Monospace"))
+                    error(id, "$path.fontFamily", "Unsupported font family")
+                return Node(id, type, text = string("text", true), fillWidth = flag("fillWidth"),
+                    fontSize = number("fontSize", 1, 128), color = color("color"), bold = flag("bold"),
+                    width = number("width", min = 1), height = number("height", min = 1),
+                    lineHeight = number("lineHeight", 1, 256), letterSpacing = number("letterSpacing", -100, 100),
+                    fontFamily = family)
+            }
+            "Button" -> {
+                checkKeys(obj, setOf("id", "type", "text", "action", "fillWidth"), id, path)
+                if (string("action", true) != "save") error(id, "$path.action", "Only the explicit save action is supported in P0")
+                return Node(id, type, text = string("text", true), fillWidth = flag("fillWidth"))
+            }
+            else -> { error(id, "$path.type", "Unsupported node type: $type"); return null }
+        }
+    }
+}
+
+private fun kotlinString(value: String): String = buildString {
+    append('"')
+    for (c in value) when (c) {
+        '"' -> append("\\\"")
+        '\\' -> append("\\\\")
+        '$' -> append('\\').append('$')
+        '\n' -> append("\\n")
+        '\r' -> append("\\r")
+        '\t' -> append("\\t")
+        else -> if (c < ' ' || Character.isSurrogate(c) || c == '\u2028' || c == '\u2029')
+            append("\\u").append(c.code.toString(16).padStart(4, '0'))
+        else append(c)
+    }
+    append('"')
+}
+
+private fun formatted(value: BigDecimal): String {
+    val clean = value.stripTrailingZeros().toPlainString()
+    return if ('.' in clean) "${clean}f" else clean
+}
+
+private fun fraction(value: BigDecimal) = value.stripTrailingZeros().toPlainString() + "f"
+private fun Node.containsGradient(): Boolean = gradient != null || children.any(Node::containsGradient)
+
+private class Emitter(private val function: String) {
+    private val lines = mutableListOf<String>()
+    val source = linkedMapOf<String, Int>()
+
+    fun render(root: Node): String {
+        lines += listOf(
+            "// Generated by MadUIKitCodegen. Do not edit.",
+            "package dev.maduikit.demo.generated",
+            "",
+            "import androidx.compose.foundation.background",
+            "import androidx.compose.foundation.layout.Arrangement",
+            "import androidx.compose.foundation.layout.Box",
+            "import androidx.compose.foundation.layout.Column",
+            "import androidx.compose.foundation.layout.Row",
+            "import androidx.compose.foundation.layout.fillMaxWidth",
+            "import androidx.compose.foundation.layout.height",
+            "import androidx.compose.foundation.layout.padding",
+            "import androidx.compose.material3.Button",
+            "import androidx.compose.material3.Text",
+            "import androidx.compose.runtime.Composable",
+            "import androidx.compose.ui.Modifier",
+            "import androidx.compose.ui.graphics.Color",
+            "import androidx.compose.ui.text.font.FontWeight",
+            "import androidx.compose.ui.unit.dp",
+            "import androidx.compose.ui.unit.sp",
+            "import androidx.compose.foundation.layout.absolutePadding",
+            "import androidx.compose.foundation.layout.width",
+            "import androidx.compose.ui.draw.clipToBounds",
+            "import androidx.compose.ui.text.font.FontFamily",
+        )
+        if (root.containsGradient()) lines += listOf(
+            "import androidx.compose.ui.draw.drawWithCache",
+            "import androidx.compose.ui.geometry.Offset",
+            "import androidx.compose.ui.graphics.Brush",
+        )
+        lines += listOf(
+            "",
+            "@Composable",
+            if (function == NORMALIZED_SCREEN) "fun $function(onSave: () -> Unit = {}) {" else "fun $function() {",
+        )
+        emit(root, 1)
+        lines += "}"
+        if (root.containsGradient()) lines += listOf(
+            "",
+            "private fun Modifier.figmaAxisGradient(horizontal: Boolean, from: Float, to: Float,",
+            "    vararg stops: Pair<Float, Color>): Modifier = drawWithCache {",
+            "    val start = if (horizontal) Offset(size.width * from, 0f) else Offset(0f, size.height * from)",
+            "    val end = if (horizontal) Offset(size.width * to, 0f) else Offset(0f, size.height * to)",
+            "    val brush = Brush.linearGradient(*stops, start = start, end = end)",
+            "    onDrawBehind { drawRect(brush) }",
+            "}",
+        )
+        return lines.joinToString("\n", postfix = "\n")
+    }
+
+    private fun emit(node: Node, depth: Int) {
+        val indent = "    ".repeat(depth)
+        source[node.id] = lines.size + 1
+        val mods = buildList {
+            if (node.fillWidth) add("fillMaxWidth()")
+            node.width?.let { add("width(${formatted(it)}.dp)") }
+            node.height?.let { add("height(${formatted(it)}.dp)") }
+            if (node.clip) add("clipToBounds()")
+            node.background?.let { add("background(Color(0x$it))") }
+            node.gradient?.let { gradient ->
+                val stops = gradient.stops.joinToString(", ") { (at, color) -> "${fraction(at)} to Color(0x$color)" }
+                add("figmaAxisGradient(${gradient.axis == "x"}, ${fraction(gradient.start)}, ${fraction(gradient.end)}, $stops)")
+            }
+            node.padding?.let { add("padding(${formatted(it)}.dp)") }
+            node.paddingEdges?.let {
+                add("absolutePadding(left = ${formatted(it[0])}.dp, top = ${formatted(it[1])}.dp, right = ${formatted(it[2])}.dp, bottom = ${formatted(it[3])}.dp)")
+            }
+        }
+        val modifier = mods.takeIf { it.isNotEmpty() }?.joinToString(".", "Modifier.")
+        when (node.type) {
+            "Column", "Row", "Box" -> {
+                val params = buildList {
+                    modifier?.let { add("modifier = $it") }
+                    if (node.type != "Box") {
+                        val arrangement = if (node.type == "Row") "horizontalArrangement" else "verticalArrangement"
+                        node.gap?.let { add("$arrangement = Arrangement.spacedBy(${formatted(it)}.dp)") }
+                    }
+                }
+                val call = if (params.isEmpty()) node.type else node.type + params.joinToString(", ", "(", ")")
+                lines += "$indent$call {"
+                node.children.forEach { emit(it, depth + 1) }
+                lines += "$indent}"
+            }
+            "Text" -> {
+                val params = buildList {
+                    add("text = ${kotlinString(checkNotNull(node.text))}")
+                    modifier?.let { add("modifier = $it") }
+                    node.fontSize?.let { add("fontSize = ${formatted(it)}.sp") }
+                    node.letterSpacing?.let { add("letterSpacing = ${formatted(it)}.sp") }
+                    node.lineHeight?.let { add("lineHeight = ${formatted(it)}.sp") }
+                    node.fontFamily?.let { add("fontFamily = FontFamily.$it") }
+                    node.color?.let { add("color = Color(0x$it)") }
+                    if (node.bold) add("fontWeight = FontWeight.Bold")
+                }
+                lines += indent + params.joinToString(", ", "Text(", ")")
+            }
+            "Button" -> {
+                val mod = modifier?.let { ", modifier = $it" }.orEmpty()
+                lines += "${indent}Button(onClick = onSave$mod) { Text(${kotlinString(checkNotNull(node.text))}) }"
+            }
+            else -> error("Validated node cannot have unsupported type")
+        }
+    }
+}
+
+private fun sha256(content: ByteArray) = MessageDigest.getInstance("SHA-256").digest(content)
+    .joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+
+private fun writeJson(path: Path, value: JsonElement) {
+    Files.writeString(path, json.encodeToString(JsonElement.serializer(), value) + "\n", UTF_8)
+}
+
+private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: Boolean = false): Int {
+    val screen = if (figmaNode == null) NORMALIZED_SCREEN else FIGMA_SCREEN
+    val kotlinFile = "$screen.generated.kt"
+    if (!Files.isRegularFile(input) || Files.size(input) > MAX_INPUT_BYTES) {
+        System.err.println("Input must be a regular file no larger than $MAX_INPUT_BYTES bytes")
+        return 2
+    }
+    val bytes = Files.readAllBytes(input)
+    val inputHash = sha256(bytes)
+    val reader = Reader()
+    var figmaVersion: String? = null
+    val root = try {
+        val value = json.parseToJsonElement(UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString())
+        if (figmaNode == null) reader.document(value)
+        else {
+            val result = normalizeFigmaNodes(value, figmaNode, fitWidth)
+            figmaVersion = result.sourceVersion
+            reader.problems.addAll(result.problems)
+            if (result.normalized == null || result.problems.isNotEmpty()) null
+            else {
+                val normalizedPath = output.resolve("normalized-frame.json")
+                Files.createDirectories(output)
+                writeJson(normalizedPath, result.normalized)
+                reader.document(result.normalized)
+            }
+        }
+    } catch (_: CharacterCodingException) {
+        reader.problems += Problem("document", "$", "Input is not valid UTF-8")
+        null
+    } catch (_: IllegalArgumentException) {
+        reader.problems += Problem("document", "$", "Invalid JSON")
+        null
+    }
+    Files.createDirectories(output)
+    val diagnostics = buildJsonObject {
+        put("schemaVersion", 1)
+        put("inputSha256", inputHash)
+        put("ok", root != null && reader.problems.isEmpty())
+        putJsonArray("errors") {
+            reader.problems.forEach { problem ->
+                add(buildJsonObject {
+                    put("nodeId", problem.nodeId)
+                    put("path", problem.path)
+                    put("message", problem.message)
+                })
+            }
+        }
+    }
+    writeJson(output.resolve("diagnostics.json"), diagnostics)
+    if (root == null || reader.problems.isNotEmpty()) {
+        System.err.println("Generation failed; see diagnostics.json. Any earlier output is not from this run.")
+        return 2
+    }
+    val emitter = Emitter(screen)
+    val code = emitter.render(root)
+    Files.writeString(output.resolve(kotlinFile), code, UTF_8)
+    writeJson(output.resolve("source-map.json"), buildJsonObject {
+        put("schemaVersion", 1)
+        put("file", kotlinFile)
+        putJsonObject("nodeLines") { emitter.source.forEach { (id, line) -> put(id, line) } }
+    })
+    writeJson(output.resolve("manifest.json"), buildJsonObject {
+        put("schemaVersion", 1)
+        put("generatorVersion", GENERATOR_VERSION)
+        put("target", "cmp")
+        put("frameId", root.id)
+        if (figmaNode != null) {
+            put("inputFormat", "figma-rest-file-nodes")
+            put("adapterVersion", FIGMA_ADAPTER_VERSION)
+            if (fitWidth) put("rootWidthMode", "fit-host")
+            figmaVersion?.let { put("figmaSourceVersion", it) }
+        }
+        put("inputSha256", inputHash)
+        put("sdkRequired", false)
+        putJsonObject("files") { put(kotlinFile, sha256(code.toByteArray(UTF_8))) }
+    })
+    return 0
+}
+
+fun main(args: Array<String>) {
+    val normalized = args.size == 5 && args[0] == "generate" && args[1] == "--input" && args[3] == "--out"
+    val fitWidth = args.size == 8 && args[7] == "--fit-width"
+    val figma = (args.size == 7 || fitWidth) && args[0] == "generate-figma" && args[1] == "--input" &&
+        args[3] == "--node" && args[5] == "--out"
+    if (!normalized && !figma) {
+        System.err.println("Usage: maduikit-codegen generate --input <normalized-frame.json> --out <directory>")
+        System.err.println("   or: maduikit-codegen generate-figma --input <file-nodes.json> --node <id> --out <directory> [--fit-width]")
+        exitProcess(2)
+    }
+    try {
+        if (figma) exitProcess(run(Path(args[2]), Path(args[6]), args[4], fitWidth))
+        exitProcess(run(Path(args[2]), Path(args[4])))
+    } catch (err: java.io.IOException) {
+        System.err.println("File I/O failed: ${err.javaClass.simpleName}")
+        exitProcess(2)
+    } catch (_: java.nio.file.InvalidPathException) {
+        System.err.println("Invalid file path")
+        exitProcess(2)
+    }
+}

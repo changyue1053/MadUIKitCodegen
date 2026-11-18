@@ -1,0 +1,15 @@
+{
+    "schemaVersion": 1,
+    "generatorVersion": "0.3.0-p5-preview",
+    "target": "cmp",
+    "frameId": "3:1",
+    "inputFormat": "figma-rest-file-nodes",
+    "adapterVersion": 2,
+    "rootWidthMode": "fit-host",
+    "figmaSourceVersion": "synthetic-p5-gradient-v1",
+    "inputSha256": "6d58003ec0ff20117aefb72f7925a672ac3235f5af244014bf216c57c8687d6f",
+    "sdkRequired": false,
+    "files": {
+        "FigmaProfileScreen.generated.kt": "652457633b3e993965e4aefccc20e60ba0577b697ff04adc713bde7544e8e0e5"
+    }
+}

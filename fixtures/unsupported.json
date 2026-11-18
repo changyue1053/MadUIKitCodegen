@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "frame": {
+    "id": "root",
+    "type": "Column",
+    "children": [{"id": "gradient:70", "type": "GradientMesh"}]
+  }
+}

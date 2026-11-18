@@ -1,0 +1,11 @@
+{
+    "schemaVersion": 1,
+    "generatorVersion": "0.3.0-p5-preview",
+    "target": "cmp",
+    "frameId": "frame:profile",
+    "inputSha256": "17efaece606eaa39d2463e145de27b44a4c1fbbd7d9ed461af9e620484b47423",
+    "sdkRequired": false,
+    "files": {
+        "SyntheticProfileScreen.generated.kt": "22476877a92e1cdc73705e5e62bb09fa437daedfef69f172467e80bf72dd6658"
+    }
+}

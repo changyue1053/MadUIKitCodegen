@@ -1,0 +1,14 @@
+{
+    "schemaVersion": 1,
+    "generatorVersion": "0.3.0-p5-preview",
+    "target": "cmp",
+    "frameId": "1:2",
+    "inputFormat": "figma-rest-file-nodes",
+    "adapterVersion": 2,
+    "figmaSourceVersion": "synthetic-p1-v1",
+    "inputSha256": "336317f27e1d965bb31a1e1ae5d713bf7de1a70751b3da0030058db7805ab7f6",
+    "sdkRequired": false,
+    "files": {
+        "FigmaProfileScreen.generated.kt": "6853f95a5587faaef0b89df1b0a96bd311986ca430b630361b67fc488f9fb872"
+    }
+}

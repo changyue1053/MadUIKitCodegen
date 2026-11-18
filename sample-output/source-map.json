@@ -1,0 +1,15 @@
+{
+    "schemaVersion": 1,
+    "file": "SyntheticProfileScreen.generated.kt",
+    "nodeLines": {
+        "frame:profile": 27,
+        "title": 28,
+        "description": 29,
+        "summary": 30,
+        "summary:row": 31,
+        "nickname:label": 32,
+        "nickname:value": 33,
+        "summary:hint": 35,
+        "save": 37
+    }
+}

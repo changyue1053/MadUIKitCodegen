@@ -1,0 +1,33 @@
+plugins {
+    kotlin("jvm") version "2.2.21"
+    application
+}
+repositories { mavenCentral() }
+dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+}
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+application {
+    mainClass.set("dev.maduikit.codegen.MainKt")
+}
+val smokeTest by tasks.registering(Exec::class) {
+    dependsOn(tasks.installDist)
+    commandLine("bash", "scripts/smoke.sh", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
+}
+val figmaSmokeTest by tasks.registering(Exec::class) {
+    dependsOn(tasks.installDist)
+    commandLine("bash", "scripts/figma-smoke.sh", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
+}
+val gradientSmokeTest by tasks.registering(Exec::class) {
+    dependsOn(tasks.installDist)
+    commandLine("bash", "scripts/gradient-smoke.sh", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
+}
+tasks.check { dependsOn(smokeTest, figmaSmokeTest, gradientSmokeTest) }

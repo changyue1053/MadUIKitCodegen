@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "frame": {
+    "id": "frame:profile", "type": "Column", "fillWidth": true, "padding": 24, "gap": 16,
+    "background": "#FFFFFFFF",
+    "children": [
+      {"id": "title", "type": "Text", "text": "编辑个人资料", "fontSize": 28, "bold": true, "color": "#FF182238"},
+      {"id": "description", "type": "Text", "text": "这是一张公开合成稿，用于验证生成与宿主接入。", "fontSize": 14, "color": "#FF435273"},
+      {
+        "id": "summary", "type": "Column", "fillWidth": true, "padding": 16, "gap": 8,
+        "background": "#FFF0F4FC",
+        "children": [
+          {
+            "id": "summary:row", "type": "Row", "gap": 12,
+            "children": [
+              {"id": "nickname:label", "type": "Text", "text": "昵称", "fontSize": 16, "bold": true, "color": "#FF182238"},
+              {"id": "nickname:value", "type": "Text", "text": "MadUIKit 示例", "fontSize": 16, "color": "#FF344569"}
+            ]
+          },
+          {"id": "summary:hint", "type": "Text", "text": "当前为静态预览，保存动作由宿主处理。", "fontSize": 13, "color": "#FF435273"}
+        ]
+      },
+      {"id": "save", "type": "Button", "text": "保存", "action": "save", "fillWidth": true}
+    ]
+  }
+}

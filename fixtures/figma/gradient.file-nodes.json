@@ -1,0 +1,336 @@
+{
+  "name": "Synthetic MadUIKit P5 fixture (not a live Figma file)",
+  "editorType": "figma",
+  "version": "synthetic-p5-gradient-v1",
+  "nodes": {
+    "3:1": {
+      "schemaVersion": 0,
+      "document": {
+        "id": "3:1",
+        "type": "FRAME",
+        "name": "P5 responsive gradients",
+        "layoutMode": "VERTICAL",
+        "layoutSizingHorizontal": "FIXED",
+        "layoutSizingVertical": "FIXED",
+        "itemSpacing": 12,
+        "paddingLeft": 16,
+        "paddingRight": 16,
+        "paddingTop": 16,
+        "paddingBottom": 16,
+        "clipsContent": true,
+        "fills": [
+          {
+            "type": "SOLID",
+            "color": {
+              "r": 0.93,
+              "g": 0.95,
+              "b": 0.98,
+              "a": 1
+            }
+          }
+        ],
+        "children": [
+          {
+            "id": "3:2",
+            "type": "TEXT",
+            "name": "Title",
+            "characters": "MadUIKit · 渐变拓展",
+            "layoutSizingHorizontal": "HUG",
+            "layoutSizingVertical": "HUG",
+            "style": {
+              "fontFamily": "sans-serif",
+              "fontWeight": 700,
+              "fontSize": 21,
+              "textAutoResize": "WIDTH_AND_HEIGHT",
+              "lineHeightUnit": "PIXELS",
+              "lineHeightPx": 26
+            },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0.07,
+                  "g": 0.1,
+                  "b": 0.17,
+                  "a": 1
+                }
+              }
+            ]
+          },
+          {
+            "id": "3:3",
+            "type": "FRAME",
+            "name": "Gradient banner",
+            "layoutMode": "VERTICAL",
+            "layoutSizingHorizontal": "FILL",
+            "layoutSizingVertical": "FIXED",
+            "itemSpacing": 14,
+            "paddingLeft": 18,
+            "paddingRight": 18,
+            "paddingTop": 18,
+            "paddingBottom": 18,
+            "clipsContent": true,
+            "fills": [
+              {
+                "type": "GRADIENT_LINEAR",
+                "gradientHandlePositions": [
+                  {
+                    "x": 0,
+                    "y": 0.5
+                  },
+                  {
+                    "x": 1,
+                    "y": 0.5
+                  },
+                  {
+                    "x": 0,
+                    "y": 1
+                  }
+                ],
+                "gradientStops": [
+                  {
+                    "position": 0,
+                    "color": {
+                      "r": 0.12,
+                      "g": 0.21,
+                      "b": 0.53,
+                      "a": 1
+                    }
+                  },
+                  {
+                    "position": 0.48,
+                    "color": {
+                      "r": 0.33,
+                      "g": 0.15,
+                      "b": 0.57,
+                      "a": 1
+                    }
+                  },
+                  {
+                    "position": 1,
+                    "color": {
+                      "r": 0.05,
+                      "g": 0.42,
+                      "b": 0.42,
+                      "a": 1
+                    }
+                  }
+                ]
+              }
+            ],
+            "children": [
+              {
+                "id": "3:4",
+                "type": "TEXT",
+                "name": "Heading",
+                "characters": "渐变与宽度随宿主",
+                "layoutSizingHorizontal": "HUG",
+                "layoutSizingVertical": "HUG",
+                "style": {
+                  "fontFamily": "sans-serif",
+                  "fontWeight": 700,
+                  "fontSize": 26,
+                  "textAutoResize": "WIDTH_AND_HEIGHT",
+                  "lineHeightUnit": "PIXELS",
+                  "lineHeightPx": 31
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 1,
+                      "g": 1,
+                      "b": 1,
+                      "a": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3:5",
+                "type": "TEXT",
+                "name": "Caption",
+                "characters": "Figma REST 格式的第二张合成页面",
+                "layoutSizingHorizontal": "HUG",
+                "layoutSizingVertical": "HUG",
+                "style": {
+                  "fontFamily": "sans-serif",
+                  "fontWeight": 400,
+                  "fontSize": 13,
+                  "textAutoResize": "WIDTH_AND_HEIGHT",
+                  "lineHeightUnit": "PIXELS",
+                  "lineHeightPx": 18
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0.91,
+                      "g": 0.95,
+                      "b": 1,
+                      "a": 1
+                    }
+                  }
+                ]
+              }
+            ],
+            "absoluteBoundingBox": {
+              "x": 16,
+              "y": 63,
+              "width": 312,
+              "height": 106
+            }
+          },
+          {
+            "id": "3:6",
+            "type": "FRAME",
+            "name": "Vertical direction card",
+            "layoutMode": "VERTICAL",
+            "layoutSizingHorizontal": "FILL",
+            "layoutSizingVertical": "FIXED",
+            "itemSpacing": 8,
+            "paddingLeft": 13,
+            "paddingRight": 13,
+            "paddingTop": 13,
+            "paddingBottom": 13,
+            "clipsContent": true,
+            "fills": [
+              {
+                "type": "GRADIENT_LINEAR",
+                "gradientHandlePositions": [
+                  {
+                    "x": 0.5,
+                    "y": 1
+                  },
+                  {
+                    "x": 0.5,
+                    "y": 0
+                  },
+                  {
+                    "x": 1,
+                    "y": 1
+                  }
+                ],
+                "gradientStops": [
+                  {
+                    "position": 0,
+                    "color": {
+                      "r": 0.77,
+                      "g": 0.92,
+                      "b": 0.91,
+                      "a": 1
+                    }
+                  },
+                  {
+                    "position": 1,
+                    "color": {
+                      "r": 0.98,
+                      "g": 0.99,
+                      "b": 1,
+                      "a": 1
+                    }
+                  }
+                ]
+              }
+            ],
+            "children": [
+              {
+                "id": "3:7",
+                "type": "TEXT",
+                "name": "Vertical gradient label",
+                "characters": "纵向渐变 · 高保真试验",
+                "layoutSizingHorizontal": "HUG",
+                "layoutSizingVertical": "HUG",
+                "style": {
+                  "fontFamily": "sans-serif",
+                  "fontWeight": 700,
+                  "fontSize": 16,
+                  "textAutoResize": "WIDTH_AND_HEIGHT",
+                  "lineHeightUnit": "PIXELS",
+                  "lineHeightPx": 21
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0.07,
+                      "g": 0.1,
+                      "b": 0.17,
+                      "a": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "3:8",
+                "type": "TEXT",
+                "name": "Description",
+                "characters": "两个宿主宽度，同一份可编译的 CMP 生成代码。",
+                "layoutSizingHorizontal": "FILL",
+                "layoutSizingVertical": "HUG",
+                "style": {
+                  "fontFamily": "sans-serif",
+                  "fontWeight": 400,
+                  "fontSize": 13,
+                  "textAutoResize": "HEIGHT",
+                  "lineHeightUnit": "PIXELS",
+                  "lineHeightPx": 18
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0.15,
+                      "g": 0.24,
+                      "b": 0.34,
+                      "a": 1
+                    }
+                  }
+                ]
+              }
+            ],
+            "absoluteBoundingBox": {
+              "x": 16,
+              "y": 181,
+              "width": 312,
+              "height": 96
+            }
+          },
+          {
+            "id": "3:9",
+            "type": "TEXT",
+            "name": "Footnote",
+            "characters": "公开合成稿 · 尚未验收真实 Figma 参考图",
+            "layoutSizingHorizontal": "FILL",
+            "layoutSizingVertical": "HUG",
+            "style": {
+              "fontFamily": "sans-serif",
+              "fontWeight": 400,
+              "fontSize": 11,
+              "textAutoResize": "HEIGHT",
+              "lineHeightUnit": "PIXELS",
+              "lineHeightPx": 16
+            },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0.15,
+                  "g": 0.24,
+                  "b": 0.34,
+                  "a": 1
+                }
+              }
+            ]
+          }
+        ],
+        "absoluteBoundingBox": {
+          "x": 0,
+          "y": 0,
+          "width": 344,
+          "height": 330
+        }
+      }
+    }
+  }
+}
