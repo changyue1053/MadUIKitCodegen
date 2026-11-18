@@ -61,3 +61,9 @@ val wrappedResourceSmokeTest by tasks.registering(Exec::class) {
     commandLine("bash", "scripts/wrapped-resource-smoke.sh", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
 }
 tasks.check { dependsOn(wrappedResourceSmokeTest) }
+
+val verifiedGenerationSmokeTest by tasks.registering(Exec::class) {
+    dependsOn(tasks.installDist)
+    commandLine("python3", "scripts/verified-generation-smoke.py", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
+}
+tasks.check { dependsOn(verifiedGenerationSmokeTest) }

@@ -185,3 +185,27 @@ build/install/MadUIKitCodegen/bin/MadUIKitCodegen generate-figma \
   --flatten-instances --asset-map fixtures/figma/wrapped-resource/asset-map.json \
   --out build/generated/wrapped-icon
 ```
+
+### 安全交付生成产物（可选包装器）
+
+自动化消费代码时，推荐用 `scripts/generate-verified.py`，而不是反复写入同一目录：
+
+```sh
+mkdir -p build/verified
+python3 scripts/generate-verified.py \
+  --launcher build/install/MadUIKitCodegen/bin/MadUIKitCodegen \
+  --input fixtures/figma/wrapped-resource.file-nodes.json --node 42:1 \
+  --asset-map fixtures/figma/wrapped-resource/asset-map.json --flatten-instances \
+  --out build/verified/wrapped-v1
+```
+
+包装器在输出父目录下的新临时目录执行生成器，仅在退出码为 0、诊断成功、
+输入/映射哈希与调用选项一致、Kotlin/资源文件哈希匹配后发布目录。已存在的
+输出（包括符号链接）一律拒绝，不覆盖旧版本；失败清理临时目录，不留下看似
+成功的目标目录。父目录需预先存在，每个调用使用独立目标，不允许并发写同一
+目标或不可信进程修改父目录。直接调用原 CLI 的行为不变。
+
+验证包括源映射文件名一致性和多余文件检查；不是签名验证、恶意生成器沙箱、
+完整元数据真实性证明，也不替代 CMP 编译、设备运行或视觉验收。调用者仍须检查
+包装器退出码，仅在成功后将该新目录交给消费者。22 项公开合成安全测试纳入
+`./gradlew check`，覆盖成功路径、旧输出保护、生成失败、哈希篡改与路径/元数据异常。
