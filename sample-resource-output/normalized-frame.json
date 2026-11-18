@@ -1,0 +1,43 @@
+{
+    "schemaVersion": 1,
+    "frame": {
+        "id": "30:1",
+        "type": "Column",
+        "width": 246,
+        "height": 122,
+        "gap": 12,
+        "paddingEdges": [
+            16,
+            14,
+            0,
+            0
+        ],
+        "background": "#FFEDF5FA",
+        "children": [
+            {
+                "id": "30:2",
+                "type": "Text",
+                "text": "Decorative asset",
+                "fontSize": 20,
+                "fontFamily": "SansSerif",
+                "bold": true,
+                "color": "#FF1C3042"
+            },
+            {
+                "id": "30:3",
+                "type": "DecorativeImage",
+                "resourceName": "mad_icon_synthetic_diamond",
+                "width": 20,
+                "height": 20
+            },
+            {
+                "id": "30:4",
+                "type": "Text",
+                "text": "Typed PNG resource, 20 dp",
+                "fontSize": 13,
+                "fontFamily": "SansSerif",
+                "color": "#FF1C3042"
+            }
+        ]
+    }
+}

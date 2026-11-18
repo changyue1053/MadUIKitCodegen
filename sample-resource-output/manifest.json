@@ -1,0 +1,23 @@
+{
+    "schemaVersion": 1,
+    "generatorVersion": "0.3.0-p5-preview",
+    "target": "cmp",
+    "frameId": "30:1",
+    "inputFormat": "figma-rest-file-nodes",
+    "adapterVersion": 2,
+    "figmaSourceVersion": "synthetic-decorative-image-v1",
+    "inputSha256": "c0f0bc87ccead608337b84bffeee7f7daa26ca3becccc217330c70a8222fb820",
+    "sdkRequired": false,
+    "assetMapSha256": "599cf6a9fde7714e054bdc125f33938c75f30c53d94f8116fdcc6ebcdecf8181",
+    "decorativeAsset": {
+        "nodeId": "30:3",
+        "file": "composeResources/drawable/mad_icon_synthetic_diamond.png",
+        "width": 20,
+        "height": 20,
+        "sha256": "a81b1d86c19d982e88cb00b3135eca2861a444cd8adbf2fb79d79e69e406eff6"
+    },
+    "files": {
+        "FigmaProfileScreen.generated.kt": "c782659e94dd1bdbab405858a2cd464b95434836ae15ff630a21bb7cb3e66154",
+        "composeResources/drawable/mad_icon_synthetic_diamond.png": "a81b1d86c19d982e88cb00b3135eca2861a444cd8adbf2fb79d79e69e406eff6"
+    }
+}

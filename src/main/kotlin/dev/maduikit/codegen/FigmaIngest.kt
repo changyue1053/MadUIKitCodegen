@@ -8,12 +8,13 @@ internal const val FIGMA_ADAPTER_VERSION = 2
 
 internal data class FigmaResult(val normalized: JsonObject?, val sourceVersion: String?, val problems: List<Problem>)
 
-internal fun normalizeFigmaNodes(value: JsonElement, target: String, fitWidth: Boolean = false, flattenInstances: Boolean = false): FigmaResult =
-    FigmaNodesReader(fitWidth, flattenInstances).read(value, target)
+internal fun normalizeFigmaNodes(value: JsonElement, target: String, fitWidth: Boolean = false, flattenInstances: Boolean = false, asset: ExplicitAsset? = null): FigmaResult =
+    FigmaNodesReader(fitWidth, flattenInstances, asset).read(value, target)
 
-private class FigmaNodesReader(private val fitWidth: Boolean, private val flattenInstances: Boolean) {
+private class FigmaNodesReader(private val fitWidth: Boolean, private val flattenInstances: Boolean, private val asset: ExplicitAsset?) {
     private val problems = mutableListOf<Problem>()
     private var visited = 0
+    private var assetUsed = false
 
     fun read(value: JsonElement, target: String): FigmaResult {
         val idPattern = Regex("[0-9]+:[0-9]+")
@@ -37,6 +38,8 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
         val normalized = convert(doc, "$metadata.document", null, 0, true)?.let { frame ->
             buildJsonObject { put("schemaVersion", 1); put("frame", frame) }
         }
+        if (asset != null && !assetUsed)
+            problem(asset.nodeId, "$.assetMap.nodeId", "Mapped VECTOR must be a visible leaf of the requested Frame")
         return FigmaResult(normalized, sourceVersion, problems.toList())
     }
 
@@ -108,6 +111,33 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
         for (field in listOf("effects", "strokes")) {
             val raw = node[field] ?: continue
             if (raw !is JsonArray || raw.any { (it as? JsonObject)?.flag("visible") != false }) fail(field, "Visible $field are not supported")
+        }
+
+        if (asset != null && asset.nodeId == id) {
+            if (assetUsed) fail("id", "Mapped node appears more than once")
+            assetUsed = true
+            if (root || node.str("type") != "VECTOR") {
+                fail("type", "Only an explicitly mapped non-root VECTOR leaf is supported")
+                return null
+            }
+            absent("children")
+            absent("interactions"); absent("reactions")
+            expect("layoutMode", setOf("NONE"))
+            expect("layoutAlign", setOf("INHERIT"))
+            zero("layoutGrow")
+            for (axis in listOf("layoutSizingHorizontal", "layoutSizingVertical"))
+                if (node.str(axis) != "FIXED") fail(axis, "Mapped bitmap leaf requires explicit FIXED dimension")
+            val width = dimension("width")
+            val height = dimension("height")
+            if (width?.compareTo(asset.width.toBigDecimal()) != 0 || height?.compareTo(asset.height.toBigDecimal()) != 0)
+                fail("absoluteBoundingBox", "Mapped bitmap pixel dimensions must exactly match node logical dp bounds")
+            return buildJsonObject {
+                put("id", id)
+                put("type", "DecorativeImage")
+                put("resourceName", asset.resourceName)
+                width?.let { put("width", it.normalized()) }
+                height?.let { put("height", it.normalized()) }
+            }
         }
 
         return when (val type = node.str("type")) {

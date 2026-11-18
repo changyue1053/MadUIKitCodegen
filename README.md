@@ -127,3 +127,34 @@ build/install/MadUIKitCodegen/bin/MadUIKitCodegen generate-figma \
 ```
 
 公开合成测试包含随宿主变化的工具栏和固定高度面板，不代表实稿或跨端像素一致。
+
+### 离线单个装饰图标（显式绑定）
+
+`generate-figma --asset-map path/to/map.json` 支持给**一个**可见的无交互 VECTOR
+叶节点声明已经准备好的 PNG；默认仍拒绝 VECTOR。生成器不访问 Figma/CDN，不下载、
+解析或重画矢量，也不使用整页截图。它验证绑定、逐字节保留 PNG 并生成可编译的 CMP
+`Image(painterResource(Res.drawable.…))`；这是纯装饰图，`contentDescription = null`，
+不适用于需要可访问名称的图标。
+
+映射的四个字段为 `schemaVersion: 1`、规范 `nodeId`、相邻普通文件的安全基础名
+`file: "mad_icon_….png"` 和预先核验的小写 `sha256`。不允许 URL、子目录、遍历路径或
+符号链接 PNG。只支持带透明及可见像素的 8 位 RGBA、非隔行 PNG，不接受 APNG/其他
+附加块；上限 32 KiB、每轴 64px。VECTOR 节点必须显式固定尺寸，PNG 像素宽高
+必须与节点的 dp 尺寸相同，不使用遮罩、旋转、变形、节点效果、描边或交互。
+不从未知字段推断素材；错误会输出诊断，不生成新的成功 Kotlin/清单。
+
+```sh
+./gradlew check installDist
+build/install/MadUIKitCodegen/bin/MadUIKitCodegen generate-figma \
+  --input fixtures/figma/resource.file-nodes.json --node 30:1 \
+  --asset-map fixtures/figma/resource/asset-map.json --out build/generated/icon
+```
+
+将生成的 Kotlin 与 `composeResources/drawable/*.png` 一并复制到同一消费者模块的源码集，
+KMP 例子是 `src/commonMain/kotlin` 和 `src/commonMain/composeResources/drawable`。
+消费者启用 CMP Resources （`implementation(compose.components.resources)`），并设
+`compose.resources { packageOfResClass = "dev.maduikit.demo.resources" }`。生成 manifest
+记录输入、映射、图像的 SHA-256，以及节点 ID、固定尺寸和产物相对路径。普通
+`generate` 不接受缺少已验证素材的归一化图像节点。演示金蓝菱形为网格手写合成 PNG，
+可用 `python3 scripts/make-synthetic-icon.py` 复建。这不是通用图像流水线，也未验收
+Android/iOS/HarmonyOS 打包。

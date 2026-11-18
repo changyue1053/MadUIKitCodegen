@@ -6,6 +6,8 @@ import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.file.Path
 import java.security.MessageDigest
 import kotlin.io.path.Path
@@ -52,9 +54,10 @@ private data class Node(
     val crossCentered: Boolean = false,
     val sourceComponentId: String? = null,
     val children: List<Node> = emptyList(),
+    val resourceName: String? = null,
 )
 
-private class Reader {
+private class Reader(private val asset: ExplicitAsset?) {
     val problems = mutableListOf<Problem>()
     private val ids = mutableSetOf<String>()
 
@@ -249,6 +252,18 @@ private class Reader {
                     cornerRadii = cornerRadii(),
                 )
             }
+            "DecorativeImage" -> {
+                checkKeys(obj, setOf("id", "type", "width", "height", "resourceName"), id, path)
+                val resourceName = string("resourceName", required = true)
+                val width = number("width", min = 1, max = 64)
+                val height = number("height", min = 1, max = 64)
+                if (asset == null || resourceName != asset.resourceName || id != asset.nodeId ||
+                    width?.compareTo(asset.width.toBigDecimal()) != 0 || height?.compareTo(asset.height.toBigDecimal()) != 0) {
+                    error(id, "$path.resourceName", "Image leaf requires exactly matching verified --asset-map binding")
+                    return null
+                }
+                return Node(id = id, type = type, height = height, width = width, resourceName = resourceName)
+            }
             "Text" -> {
                 checkKeys(obj, textFields + setOf("id", "type"), id, path)
                 val family = string("fontFamily")
@@ -296,6 +311,10 @@ private fun Node.containsCenter(): Boolean = mainCentered || crossCentered || ch
 
 private fun Node.containsGradient(): Boolean = gradient != null || children.any(Node::containsGradient)
 
+private fun Node.imageResources(): List<String> = listOfNotNull(resourceName) + children.flatMap(Node::imageResources)
+
+private fun Node.containsImage(): Boolean = resourceName != null || children.any(Node::containsImage)
+
 private fun Node.containsCorners(): Boolean = cornerRadii != null || children.any(Node::containsCorners)
 private fun Node.containsRoundedClip(): Boolean = (clip && cornerRadii != null) || children.any(Node::containsRoundedClip)
 private fun Node.containsRoundedUnclippedGradient(): Boolean =
@@ -338,6 +357,13 @@ private class Emitter(private val function: String) {
             "import androidx.compose.ui.graphics.Shape",
             "import androidx.compose.ui.graphics.drawOutline",
         )
+        if (root.containsImage()) {
+            lines += "import androidx.compose.foundation.Image"
+            lines += "import androidx.compose.ui.layout.ContentScale"
+            lines += "import org.jetbrains.compose.resources.painterResource"
+            lines += "import dev.maduikit.demo.resources.Res"
+            lines += root.imageResources().distinct().sorted().map { "import dev.maduikit.demo.resources.$it" }
+        }
         if (root.containsCenter()) lines += "import androidx.compose.ui.Alignment"
         if (root.containsGradient()) lines += listOf(
             "import androidx.compose.ui.draw.drawWithCache",
@@ -429,6 +455,10 @@ private class Emitter(private val function: String) {
                 node.children.forEach { emit(it, depth + 1) }
                 lines += "$indent}"
             }
+            "DecorativeImage" -> {
+                val name = checkNotNull(node.resourceName)
+                lines += "${indent}Image(painter = painterResource(Res.drawable.$name), contentDescription = null, modifier = ${checkNotNull(modifier)}, contentScale = ContentScale.FillBounds)"
+            }
             "Text" -> {
                 val params = buildList {
                     add("text = ${kotlinString(checkNotNull(node.text))}")
@@ -451,14 +481,14 @@ private class Emitter(private val function: String) {
     }
 }
 
-private fun sha256(content: ByteArray) = MessageDigest.getInstance("SHA-256").digest(content)
+internal fun sha256(content: ByteArray) = MessageDigest.getInstance("SHA-256").digest(content)
     .joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
 
 private fun writeJson(path: Path, value: JsonElement) {
     Files.writeString(path, json.encodeToString(JsonElement.serializer(), value) + "\n", UTF_8)
 }
 
-private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: Boolean = false, flattenInstances: Boolean = false): Int {
+private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: Boolean = false, flattenInstances: Boolean = false, assetMap: Path? = null): Int {
     val screen = if (figmaNode == null) NORMALIZED_SCREEN else FIGMA_SCREEN
     val kotlinFile = "$screen.generated.kt"
     if (!Files.isRegularFile(input) || Files.size(input) > MAX_INPUT_BYTES) {
@@ -467,13 +497,28 @@ private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: 
     }
     val bytes = Files.readAllBytes(input)
     val inputHash = sha256(bytes)
-    val reader = Reader()
+    var assetIssue: String? = null
+    val asset = assetMap?.let {
+        try {
+            readExplicitAsset(it)
+        } catch (err: java.io.IOException) {
+            assetIssue = "Cannot read map or local PNG: ${err.javaClass.simpleName}"
+            null
+        } catch (err: IllegalArgumentException) {
+            assetIssue = if (err.javaClass == IllegalArgumentException::class.java) err.message ?: "Invalid asset map or PNG"
+                else "Invalid asset map or PNG"
+            null
+        }
+    }
+    val reader = Reader(asset)
+    assetIssue?.let { reader.problems += Problem("document", "$.assetMap", it) }
     var figmaVersion: String? = null
     val root = try {
         val value = json.parseToJsonElement(UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString())
-        if (figmaNode == null) reader.document(value)
+        if (assetIssue != null) null
+        else if (figmaNode == null) reader.document(value)
         else {
-            val result = normalizeFigmaNodes(value, figmaNode, fitWidth, flattenInstances)
+            val result = normalizeFigmaNodes(value, figmaNode, fitWidth, flattenInstances, asset)
             figmaVersion = result.sourceVersion
             reader.problems.addAll(result.problems)
             if (result.normalized == null || result.problems.isNotEmpty()) null
@@ -492,6 +537,15 @@ private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: 
         null
     }
     Files.createDirectories(output)
+    if (root != null && reader.problems.isEmpty() && asset != null) {
+        try {
+            stageAsset(output, asset)
+        } catch (err: java.io.IOException) {
+            reader.problems += Problem(asset.nodeId, "$.assetMap.output", "Failed to write confined resource: ${err.javaClass.simpleName}")
+        } catch (_: IllegalArgumentException) {
+            reader.problems += Problem(asset.nodeId, "$.assetMap.output", "Resource output directory must not be a symlink")
+        }
+    }
     val diagnostics = buildJsonObject {
         put("schemaVersion", 1)
         put("inputSha256", inputHash)
@@ -536,26 +590,65 @@ private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: 
         }
         put("inputSha256", inputHash)
         put("sdkRequired", false)
-        putJsonObject("files") { put(kotlinFile, sha256(code.toByteArray(UTF_8))) }
+        if (asset != null) {
+            put("assetMapSha256", asset.mapHash)
+            putJsonObject("decorativeAsset") {
+                put("nodeId", asset.nodeId)
+                put("file", asset.outputPath)
+                put("width", asset.width)
+                put("height", asset.height)
+                put("sha256", asset.hash)
+            }
+        }
+        putJsonObject("files") {
+            put(kotlinFile, sha256(code.toByteArray(UTF_8)))
+            if (asset != null) put(asset.outputPath, asset.hash)
+        }
     })
     return 0
 }
 
+private fun stageAsset(output: Path, asset: ExplicitAsset) {
+    fun directory(path: Path): Path {
+        if (!Files.exists(path, NOFOLLOW_LINKS)) Files.createDirectory(path)
+        require(Files.isDirectory(path, NOFOLLOW_LINKS))
+        return path
+    }
+    val drawable = directory(directory(output.resolve("composeResources")).resolve("drawable"))
+    val temp = Files.createTempFile(drawable, ".maduikit-", ".tmp")
+    try {
+        Files.write(temp, asset.bytes)
+        Files.move(temp, drawable.resolve("${asset.resourceName}.png"), REPLACE_EXISTING)
+    } finally {
+        Files.deleteIfExists(temp)
+    }
+}
+
 fun main(args: Array<String>) {
     val normalized = args.size == 5 && args[0] == "generate" && args[1] == "--input" && args[3] == "--out"
-    val flags = args.drop(7)
-    val fitWidth = "--fit-width" in flags
-    val flattenInstances = "--flatten-instances" in flags
-    val validFlags = flags.size == flags.toSet().size && flags.all { it == "--fit-width" || it == "--flatten-instances" }
+    var fitWidth = false
+    var flattenInstances = false
+    var assetMapArgument: String? = null
+    var validFlags = true
+    var i = 7
+    while (i < args.size && validFlags) {
+        when (args[i++]) {
+            "--fit-width" -> if (fitWidth) validFlags = false else fitWidth = true
+            "--flatten-instances" -> if (flattenInstances) validFlags = false else flattenInstances = true
+            "--asset-map" -> if (assetMapArgument != null || i >= args.size || args[i].startsWith("--"))
+                validFlags = false else assetMapArgument = args[i++]
+            else -> validFlags = false
+        }
+    }
     val figma = (args.size >= 7 && validFlags) && args[0] == "generate-figma" && args[1] == "--input" &&
         args[3] == "--node" && args[5] == "--out"
     if (!normalized && !figma) {
         System.err.println("Usage: maduikit-codegen generate --input <normalized-frame.json> --out <directory>")
-        System.err.println("   or: maduikit-codegen generate-figma --input <file-nodes.json> --node <id> --out <directory> [--fit-width] [--flatten-instances]")
+        System.err.println("   or: maduikit-codegen generate-figma --input <file-nodes.json> --node <id> --out <directory> [--fit-width] [--flatten-instances] [--asset-map <local-map.json>]")
         exitProcess(2)
     }
     try {
-        if (figma) exitProcess(run(Path(args[2]), Path(args[6]), args[4], fitWidth, flattenInstances))
+        if (figma) exitProcess(run(Path(args[2]), Path(args[6]), args[4], fitWidth, flattenInstances, assetMapArgument?.let { Path(it) }))
         exitProcess(run(Path(args[2]), Path(args[4])))
     } catch (err: java.io.IOException) {
         System.err.println("File I/O failed: ${err.javaClass.simpleName}")
