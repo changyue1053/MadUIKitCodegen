@@ -41,3 +41,8 @@ val roundedSmokeTest by tasks.registering(Exec::class) {
     commandLine("bash", "scripts/rounded-smoke.sh", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
 }
 tasks.check { dependsOn(roundedSmokeTest) }
+val distributionSmokeTest by tasks.registering(Exec::class) {
+    dependsOn(tasks.installDist)
+    commandLine("bash", "scripts/distribution-smoke.sh", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
+}
+tasks.check { dependsOn(distributionSmokeTest) }

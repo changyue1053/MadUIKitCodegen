@@ -52,7 +52,7 @@ for name in ("Collapsed", "BadComponent", "UnsupportedChild", "Interactive",
     elif name == "Interactive":
         inst["reactions"] = [{"description": "Synthetic test action"}]
     elif name == "BadAlignment":
-        inst["primaryAxisAlignItems"] = "SPACE_BETWEEN"
+        inst["primaryAxisAlignItems"] = "MAX"
     elif name == "BadDescendantId":
         inst["children"][0]["id"] = "I10:2;invalid"
     else:
@@ -70,7 +70,7 @@ grep -F 'collapsed instances are not supported' "$tmp/Collapsed/diagnostics.json
 grep -F 'Expected canonical component ID' "$tmp/BadComponent/diagnostics.json"
 grep -F 'Unsupported Figma node type: VECTOR' "$tmp/UnsupportedChild/diagnostics.json"
 grep -F 'reactions' "$tmp/Interactive/diagnostics.json"
-grep -F 'Unsupported value: SPACE_BETWEEN' "$tmp/BadAlignment/diagnostics.json"
+grep -F 'Unsupported value: MAX' "$tmp/BadAlignment/diagnostics.json"
 grep -F 'canonical Figma instance descendant ID' "$tmp/BadDescendantId/diagnostics.json"
 
 emit "$tmp/CenteredFrame.json" "$tmp/frame"

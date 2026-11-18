@@ -128,7 +128,12 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
                     return null
                 }
                 expect("layoutWrap", setOf("NO_WRAP"))
-                expect("primaryAxisAlignItems", setOf("MIN", "CENTER"))
+                expect("primaryAxisAlignItems", setOf("MIN", "CENTER", "SPACE_BETWEEN"))
+                val distribute = node.str("primaryAxisAlignItems") == "SPACE_BETWEEN"
+                if (distribute) {
+                    zero("itemSpacing")
+                    expect("counterAxisAlignContent", setOf("AUTO"))
+                }
                 expect("counterAxisAlignItems", setOf("MIN", "CENTER"))
                 if (node["itemReverseZIndex"] != null && node.flag("itemReverseZIndex") != false)
                     fail("itemReverseZIndex", "Reverse stacking is not supported")
@@ -178,6 +183,24 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
                     !root && parent == "VERTICAL" && node.num("layoutGrow")?.signum() == 1 -> "FILL"
                     else -> legacy(if (layout == "HORIZONTAL") "counterAxisSizingMode" else "primaryAxisSizingMode")
                 }
+                if (distribute) {
+                    val row = layout == "HORIZONTAL"
+                    val axis = if (row) "width" else "height"
+                    val sizeKey = if (row) "layoutSizingHorizontal" else "layoutSizingVertical"
+                    val childFrames = children.orEmpty().mapNotNull { it as? JsonObject }.filter { it.flag("visible") != false }
+                    val mainSizes = childFrames.mapIndexed { index, child ->
+                        if (child.str(sizeKey) != "FIXED" || (child["layoutGrow"] != null && child.num("layoutGrow")?.signum() != 0)) {
+                            fail("primaryAxisAlignItems", "SPACE_BETWEEN visible child ${child.str("id") ?: index} requires explicit FIXED main-axis sizing and zero layoutGrow")
+                        }
+                        (child["absoluteBoundingBox"] as? JsonObject)?.num(axis)?.takeIf { it.signum() > 0 }
+                    }
+                    val declared = dimension(axis)
+                    if (mainSizes.all { it != null } && declared != null) {
+                        val used = mainSizes.filterNotNull().fold(BigDecimal.ZERO, BigDecimal::add) +
+                            (if (row) padding[0] + padding[2] else padding[1] + padding[3])
+                        if (used > declared) fail("primaryAxisAlignItems", "SPACE_BETWEEN children and main-axis padding exceed the design extent")
+                    }
+                }
                 buildJsonObject {
                     put("id", id)
                     componentId?.let { put("sourceComponentId", it) }
@@ -190,7 +213,7 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
                         putSizing(this, "HUG", v)
                         put("fillWidth", true)
                     } else putSizing(this, h, v)
-                    put("gap", number("itemSpacing").normalized())
+                    if (distribute) put("mainSpaceBetween", true) else put("gap", number("itemSpacing").normalized())
                     if (node.str("primaryAxisAlignItems") == "CENTER") put("mainCentered", true)
                     if (node.str("counterAxisAlignItems") == "CENTER") put("crossCentered", true)
                     if (padding.any { it.signum() != 0 }) put("paddingEdges", JsonArray(padding.map { JsonPrimitive(it.normalized()) }))

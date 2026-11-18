@@ -76,7 +76,7 @@ diff -r sample-gradient-output build/generated/gradient
 
 普通 Auto Layout Frame 与展开的实例都接受主、次轴
 `CENTER`，不需要额外的居中开关。`MIN` 仍按原方式生成，
-`SPACE_BETWEEN`、环绕、基线等其他对齐仍不在支持范围。
+`SPACE_BETWEEN` 的有界范围见下文；环绕、基线等其他对齐仍不在支持范围。
 居中是布局对齐，不等于文字字形或排版特性的逐像素还原。
 该里程碑不验收真实稿件、Android/iOS/HarmonyOS 渲染或像素一致性。
 
@@ -104,3 +104,26 @@ paint follows the outline. Zero radii preserve the previous output. Nonzero
 corner smoothing (squircles), malformed or conflicting radii, and unsupported
 node types remain explicit failures. The synthetic sample is not a private
 design or a pixel-parity claim. [Figma REST node types](https://developers.figma.com/docs/rest-api/file-node-types/).
+
+### 自动分布间距（窄范围）
+
+识别 Figma `primaryAxisAlignItems: SPACE_BETWEEN`。子元素贴主轴两端，
+剩余空间平均分配；不生成固定像素间隙。横向元素按 Figma 图层物理从左到右，
+不会因 CMP 的 RTL 方向自动交换；纵向从上到下。交叉轴仍遵循既有规则。
+
+仅接受固定主轴，或处在宽度受限纵向容器中的横向 FILL；例如，固定宽度的
+纵向 Figma 根 Frame 使用 `--fit-width` 后，其中的 FILL 工具栏可随宿主改宽。
+宿主必须提供有限宽度，且至少容得下所有子项与内边距。可见子项至少两个，
+且主轴尺寸明确为 FIXED；显式隐藏的子项不参与。非零 itemSpacing、换行、
+HUG 主轴、伸缩子项、无界父容器与已知溢出只生成诊断，不猜测。产物中的
+`mainSpaceBetween` 是布尔值，不能和居中或非零固定间距冲突；不表示 ArkUI 支持。
+参考 [Figma 节点模型](https://developers.figma.com/docs/rest-api/file-node-types/)。
+
+```sh
+./gradlew check installDist
+build/install/MadUIKitCodegen/bin/MadUIKitCodegen generate-figma \
+  --input fixtures/figma/distribution.file-nodes.json --node 25:1 \
+  --out build/generated/distribution --fit-width
+```
+
+公开合成测试包含随宿主变化的工具栏和固定高度面板，不代表实稿或跨端像素一致。

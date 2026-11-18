@@ -1,0 +1,271 @@
+{
+  "name": "Synthetic layout distribution",
+  "editorType": "figma",
+  "version": "synthetic-distribution-v1",
+  "nodes": {
+    "25:1": {
+      "document": {
+        "id": "25:1",
+        "type": "FRAME",
+        "name": "Synthetic distribution fixture",
+        "layoutMode": "VERTICAL",
+        "layoutSizingHorizontal": "FIXED",
+        "layoutSizingVertical": "FIXED",
+        "absoluteBoundingBox": {
+          "width": 400,
+          "height": 204
+        },
+        "children": [
+          {
+            "id": "25:2",
+            "type": "TEXT",
+            "characters": "Layout distribution",
+            "layoutSizingHorizontal": "HUG",
+            "layoutSizingVertical": "HUG",
+            "style": {
+              "fontFamily": "sans-serif",
+              "fontWeight": 700,
+              "fontSize": 20
+            },
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0.12,
+                  "g": 0.16,
+                  "b": 0.21,
+                  "a": 1
+                }
+              }
+            ]
+          },
+          {
+            "id": "25:3",
+            "type": "FRAME",
+            "name": "Toolbar - host width",
+            "layoutMode": "HORIZONTAL",
+            "layoutSizingHorizontal": "FILL",
+            "layoutSizingVertical": "FIXED",
+            "absoluteBoundingBox": {
+              "width": 368,
+              "height": 42
+            },
+            "children": [
+              {
+                "id": "25:4",
+                "type": "FRAME",
+                "name": "Toolbar start",
+                "layoutMode": "VERTICAL",
+                "layoutSizingHorizontal": "FIXED",
+                "layoutSizingVertical": "FIXED",
+                "absoluteBoundingBox": {
+                  "width": 40,
+                  "height": 24
+                },
+                "children": [],
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0.09019607843137255,
+                      "g": 0.4117647058823529,
+                      "b": 0.7607843137254902,
+                      "a": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "25:5",
+                "type": "FRAME",
+                "name": "Toolbar middle",
+                "layoutMode": "VERTICAL",
+                "layoutSizingHorizontal": "FIXED",
+                "layoutSizingVertical": "FIXED",
+                "absoluteBoundingBox": {
+                  "width": 44,
+                  "height": 24
+                },
+                "children": [],
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0.6941176470588235,
+                      "g": 0.25098039215686274,
+                      "b": 0.3764705882352941,
+                      "a": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "25:6",
+                "type": "FRAME",
+                "name": "Hidden spacer",
+                "visible": false
+              },
+              {
+                "id": "25:7",
+                "type": "FRAME",
+                "name": "Toolbar end",
+                "layoutMode": "VERTICAL",
+                "layoutSizingHorizontal": "FIXED",
+                "layoutSizingVertical": "FIXED",
+                "absoluteBoundingBox": {
+                  "width": 30,
+                  "height": 24
+                },
+                "children": [],
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0.03137254901960784,
+                      "g": 0.4980392156862745,
+                      "b": 0.3568627450980392,
+                      "a": 1
+                    }
+                  }
+                ]
+              }
+            ],
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 0.9098039215686274,
+                  "g": 0.9411764705882353,
+                  "b": 1.0,
+                  "a": 1
+                }
+              }
+            ],
+            "primaryAxisAlignItems": "SPACE_BETWEEN",
+            "counterAxisAlignItems": "CENTER",
+            "paddingLeft": 12,
+            "paddingRight": 12,
+            "itemSpacing": 0
+          },
+          {
+            "id": "25:8",
+            "type": "FRAME",
+            "name": "Panel - fixed height",
+            "layoutMode": "VERTICAL",
+            "layoutSizingHorizontal": "FIXED",
+            "layoutSizingVertical": "FIXED",
+            "absoluteBoundingBox": {
+              "width": 216,
+              "height": 96
+            },
+            "children": [
+              {
+                "id": "25:9",
+                "type": "FRAME",
+                "name": "Panel top",
+                "layoutMode": "VERTICAL",
+                "layoutSizingHorizontal": "FIXED",
+                "layoutSizingVertical": "FIXED",
+                "absoluteBoundingBox": {
+                  "width": 72,
+                  "height": 12
+                },
+                "children": [],
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0.8156862745098039,
+                      "g": 0.38823529411764707,
+                      "b": 0.09803921568627451,
+                      "a": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "25:10",
+                "type": "FRAME",
+                "name": "Panel middle",
+                "layoutMode": "VERTICAL",
+                "layoutSizingHorizontal": "FIXED",
+                "layoutSizingVertical": "FIXED",
+                "absoluteBoundingBox": {
+                  "width": 72,
+                  "height": 16
+                },
+                "children": [],
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0.5098039215686274,
+                      "g": 0.3058823529411765,
+                      "b": 0.6196078431372549,
+                      "a": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "25:11",
+                "type": "FRAME",
+                "name": "Panel bottom",
+                "layoutMode": "VERTICAL",
+                "layoutSizingHorizontal": "FIXED",
+                "layoutSizingVertical": "FIXED",
+                "absoluteBoundingBox": {
+                  "width": 72,
+                  "height": 18
+                },
+                "children": [],
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0.06666666666666667,
+                      "g": 0.5019607843137255,
+                      "b": 0.5333333333333333,
+                      "a": 1
+                    }
+                  }
+                ]
+              }
+            ],
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 1.0,
+                  "g": 0.9450980392156862,
+                  "b": 0.9098039215686274,
+                  "a": 1
+                }
+              }
+            ],
+            "primaryAxisAlignItems": "SPACE_BETWEEN",
+            "paddingTop": 8,
+            "paddingBottom": 8,
+            "paddingLeft": 12,
+            "counterAxisAlignItems": "MIN"
+          }
+        ],
+        "fills": [
+          {
+            "type": "SOLID",
+            "color": {
+              "r": 0.9803921568627451,
+              "g": 0.9882352941176471,
+              "b": 0.996078431372549,
+              "a": 1
+            }
+          }
+        ],
+        "itemSpacing": 12,
+        "paddingLeft": 16,
+        "paddingRight": 16,
+        "paddingTop": 12
+      }
+    }
+  }
+}

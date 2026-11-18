@@ -21,7 +21,7 @@ internal val figmaInstanceChildId = Regex("I[0-9]+:[0-9]+(?:;[0-9]+:[0-9]+)+")
 internal val figmaComponentId = Regex("[0-9]+:[0-9]+")
 private val argbPattern = Regex("#[0-9A-Fa-f]{8}")
 private val numericPattern = Regex("-?(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,6})?")
-private val boxFields = setOf("gap", "padding", "paddingEdges", "fillWidth", "width", "height", "background", "clip", "linearGradient", "mainCentered", "crossCentered", "cornerRadii")
+private val boxFields = setOf("gap", "padding", "paddingEdges", "fillWidth", "width", "height", "background", "clip", "linearGradient", "mainCentered", "mainSpaceBetween", "crossCentered", "cornerRadii")
 private val textFields = setOf("text", "fontSize", "color", "bold", "fillWidth", "width", "height", "lineHeight", "letterSpacing", "fontFamily")
 
 internal data class Problem(val nodeId: String, val path: String, val message: String)
@@ -48,6 +48,7 @@ private data class Node(
     val letterSpacing: BigDecimal? = null,
     val fontFamily: String? = null,
     val mainCentered: Boolean = false,
+    val mainSpaceBetween: Boolean = false,
     val crossCentered: Boolean = false,
     val sourceComponentId: String? = null,
     val children: List<Node> = emptyList(),
@@ -80,7 +81,7 @@ private class Reader {
         return frame
     }
 
-    private fun node(value: JsonElement?, path: String, depth: Int): Node? {
+    private fun node(value: JsonElement?, path: String, depth: Int, parentWidthBounded: Boolean = false): Node? {
         if (depth > 24) { error("document", path, "Frame tree depth exceeds 24"); return null }
         val obj = value as? JsonObject ?: run { error("document", path, "Expected node object"); return null }
         val rawId = (obj["id"] as? JsonPrimitive)?.takeIf { it.isString }?.content
@@ -191,7 +192,7 @@ private class Reader {
         val type = string("type", true) ?: return null
         when (type) {
             "Column", "Row", "Box" -> {
-                val allowed = if (type == "Box") boxFields - setOf("gap", "mainCentered", "crossCentered") else boxFields + "sourceComponentId"
+                val allowed = if (type == "Box") boxFields - setOf("gap", "mainCentered", "mainSpaceBetween", "crossCentered") else boxFields + "sourceComponentId"
                 checkKeys(obj, allowed + setOf("id", "type", "children"), id, path)
                 val childField = obj["children"] as? JsonArray
                 if (childField == null) error(id, "$path.children", "Expected children array")
@@ -199,19 +200,52 @@ private class Reader {
                     error(id, "$path.children", "Each node supports at most 150 children")
                     return null
                 }
+                val width = number("width", min = 1)
+                val height = number("height", min = 1)
+                val gap = number("gap", max = 128)
+                val padding = number("padding", max = 128)
+                val paddingEdges = edges()
+                val fillWidth = flag("fillWidth")
+                val mainCentered = flag("mainCentered")
+                val mainSpaceBetween = flag("mainSpaceBetween")
+                // A fixed width produces finite constraints; fillWidth only preserves a known
+                // bound. A top-level fillWidth opts into the documented bounded host contract.
+                val widthBounded = width != null || (fillWidth && (depth == 0 || parentWidthBounded))
                 val children = childField?.mapIndexedNotNull { idx, next ->
-                    node(next, "$path.children[$idx]", depth + 1)
+                    node(next, "$path.children[$idx]", depth + 1, type == "Column" && widthBounded)
                 }.orEmpty()
+                if (mainSpaceBetween) {
+                    val row = type == "Row"
+                    if (mainCentered || (gap != null && gap.signum() != 0))
+                        error(id, "$path.mainSpaceBetween", "SPACE_BETWEEN cannot be combined with centering or a non-zero gap")
+                    if ((row && !widthBounded) || (!row && height == null) || (fillWidth && width != null))
+                        error(id, "$path.mainSpaceBetween", "SPACE_BETWEEN requires a fixed main axis or a row filling a bounded column")
+                    if (children.size < 2)
+                        error(id, "$path.mainSpaceBetween", "SPACE_BETWEEN requires at least two visible children")
+                    val extent = if (row) width else height
+                    val sizes = children.map { child ->
+                        if (row && child.fillWidth) null else if (row) child.width else child.height
+                    }
+                    if (sizes.any { it == null })
+                        error(id, "$path.mainSpaceBetween", "SPACE_BETWEEN requires children with fixed main-axis sizes")
+                    if (extent != null && sizes.all { it != null }) {
+                        val insets = paddingEdges?.let { if (row) it[0] + it[2] else it[1] + it[3] }
+                            ?: (padding ?: BigDecimal.ZERO) * BigDecimal(2)
+                        val used = sizes.filterNotNull().fold(insets, BigDecimal::add)
+                        if (used > extent)
+                            error(id, "$path.mainSpaceBetween", "SPACE_BETWEEN children and main-axis padding exceed the fixed extent")
+                    }
+                }
                 val sourceComponentId = string("sourceComponentId")
                 if (sourceComponentId != null && (sourceComponentId.length > 64 || !figmaComponentId.matches(sourceComponentId)))
                     error(id, "$path.sourceComponentId", "Expected canonical Figma component ID")
                 return Node(
                     sourceComponentId = sourceComponentId,
-                    mainCentered = flag("mainCentered"), crossCentered = flag("crossCentered"),
-                    id = id, type = type, gap = number("gap", max = 128),
-                    padding = number("padding", max = 128), fillWidth = flag("fillWidth"),
-                    height = number("height", min = 1), background = color("background"), children = children,
-                    gradient = gradient(), width = number("width", min = 1), paddingEdges = edges(), clip = flag("clip"),
+                    mainCentered = mainCentered, mainSpaceBetween = mainSpaceBetween, crossCentered = flag("crossCentered"),
+                    id = id, type = type, gap = gap,
+                    padding = padding, fillWidth = fillWidth,
+                    height = height, background = color("background"), children = children,
+                    gradient = gradient(), width = width, paddingEdges = paddingEdges, clip = flag("clip"),
                     cornerRadii = cornerRadii(),
                 )
             }
@@ -375,7 +409,10 @@ private class Emitter(private val function: String) {
                         val row = node.type == "Row"
                         val mainAlignment = if (row) "CenterHorizontally" else "CenterVertically"
                         val crossAlignment = if (row) "CenterVertically" else "CenterHorizontally"
-                        if (node.mainCentered) {
+                        if (node.mainSpaceBetween) {
+                            val distribution = if (row) "Arrangement.Absolute.SpaceBetween" else "Arrangement.SpaceBetween"
+                            add("$arrangement = $distribution")
+                        } else if (node.mainCentered) {
                             val gap = node.gap ?: BigDecimal.ZERO
                             add("$arrangement = Arrangement.spacedBy(${formatted(gap)}.dp, Alignment.$mainAlignment)")
                         } else {
