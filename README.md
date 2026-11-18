@@ -158,3 +158,15 @@ KMP 例子是 `src/commonMain/kotlin` 和 `src/commonMain/composeResources/drawa
 `generate` 不接受缺少已验证素材的归一化图像节点。演示金蓝菱形为网格手写合成 PNG，
 可用 `python3 scripts/make-synthetic-icon.py` 复建。这不是通用图像流水线，也未验收
 Android/iOS/HarmonyOS 打包。
+
+装饰图绑定也可接收单层复合 ID（如 `I40:3;41:7`），但必须同时启用
+`--flatten-instances`，且它必须是其声明的普通 ID 实例的**直接可见 VECTOR
+子节点**。映射仍只允许一个 PNG，不把整个 INSTANCE 转成图片；不支持间接、
+多段或归属不符的 ID，不修改 DPR / dp 规则。示例完全合成：
+
+```sh
+build/install/MadUIKitCodegen/bin/MadUIKitCodegen generate-figma \
+  --input fixtures/figma/compound-resource.file-nodes.json --node 40:1 \
+  --flatten-instances --asset-map fixtures/figma/compound-resource/asset-map.json \
+  --out build/generated/compound-icon
+```

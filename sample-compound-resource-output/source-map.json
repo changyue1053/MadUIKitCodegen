@@ -1,0 +1,14 @@
+{
+    "schemaVersion": 1,
+    "file": "FigmaProfileScreen.generated.kt",
+    "nodeLines": {
+        "40:1": 32,
+        "40:2": 33,
+        "40:3": 34,
+        "I40:3;41:7": 35,
+        "40:4": 37
+    },
+    "instanceComponents": {
+        "40:3": "41:2"
+    }
+}

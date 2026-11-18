@@ -10,6 +10,9 @@ import java.nio.file.Path
 import java.util.zip.CRC32
 import javax.imageio.ImageIO
 
+// Narrow subset of REST compound IDs: one canonical expanded owner and one canonical child.
+internal val decorativeInstanceChildId = Regex("I([0-9]+:[0-9]+);[0-9]+:[0-9]+")
+
 internal data class ExplicitAsset(
     val nodeId: String,
     val resourceName: String,
@@ -40,8 +43,9 @@ internal fun readExplicitAsset(path: Path): ExplicitAsset {
     }
     fun string(key: String): String? = (map[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
     val nodeId = string("nodeId")
-    require(nodeId != null && nodeId.length <= 64 && figmaComponentId.matches(nodeId)) {
-        "Asset map requires a canonical Figma node ID"
+    require(nodeId != null && nodeId.length <= 64 && (figmaComponentId.matches(nodeId) ||
+        decorativeInstanceChildId.matches(nodeId))) {
+        "Asset map requires a canonical Figma node ID or a single-hop expanded instance child ID"
     }
     val file = string("file")
     require(file != null && Regex("mad_icon_[a-z][a-z0-9_]{0,38}\\.png").matches(file)) {

@@ -51,3 +51,8 @@ val resourceSmokeTest by tasks.registering(Exec::class) {
     commandLine("bash", "scripts/resource-smoke.sh", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
 }
 tasks.check { dependsOn(resourceSmokeTest) }
+val compoundResourceSmokeTest by tasks.registering(Exec::class) {
+    dependsOn(tasks.installDist)
+    commandLine("bash", "scripts/compound-resource-smoke.sh", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
+}
+tasks.check { dependsOn(compoundResourceSmokeTest) }

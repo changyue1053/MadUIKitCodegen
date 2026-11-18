@@ -47,7 +47,10 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
         problems += Problem(id, path, reason)
     }
 
-    private fun convert(node: JsonObject, path: String, parent: String?, depth: Int, root: Boolean = false): JsonObject? {
+    private fun convert(
+        node: JsonObject, path: String, parent: String?, depth: Int, root: Boolean = false,
+        expandedParentId: String? = null,
+    ): JsonObject? {
         // Hidden descendants do not contribute pixels or layout in a Figma auto-layout frame.
         if (node.flag("visible") == false) return null
         val id = node.str("id") ?: "(unknown)"
@@ -116,6 +119,11 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
         if (asset != null && asset.nodeId == id) {
             if (assetUsed) fail("id", "Mapped node appears more than once")
             assetUsed = true
+            val compound = decorativeInstanceChildId.matchEntire(id)
+            if (compound != null && compound.groupValues[1] != expandedParentId) {
+                fail("id", "Bound compound VECTOR must directly belong to its matching, explicitly expanded INSTANCE")
+                return null
+            }
             if (root || node.str("type") != "VECTOR") {
                 fail("type", "Only an explicitly mapped non-root VECTOR leaf is supported")
                 return null
@@ -255,7 +263,8 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
                     putJsonArray("children") {
                         children?.take(150)?.forEachIndexed { index, child ->
                             if (visited >= 300) fail("children", "Frame exceeds 300 nodes")
-                            else if (child is JsonObject) convert(child, "$path.children[$index]", layout, depth + 1)?.let { add(it) }
+                            else if (child is JsonObject) convert(child, "$path.children[$index]", layout, depth + 1,
+                                expandedParentId = id.takeIf { type == "INSTANCE" && figmaComponentId.matches(it) })?.let { add(it) }
                             else fail("children[$index]", "Expected child node object")
                         }
                     }
