@@ -32,6 +32,11 @@ with tempfile.TemporaryDirectory() as tmp:
     assert {p.name:p.read_bytes() for p in plain.iterdir()} == {p.name:p.read_bytes() for p in raw.iterdir()}
     wrapped = run("wrapped", "fixtures/figma/wrapped-resource.file-nodes.json", ["--node", "42:1", "--flatten-instances", "--asset-map", str(ROOT / "fixtures/figma/wrapped-resource/asset-map.json")])
     run("fit", "fixtures/figma/distribution.file-nodes.json", ["--node", "25:1", "--fit-width"])
+    (work / "real-parent/inside").mkdir(parents=True)
+    (work / "alias-parent").symlink_to(work / "real-parent", target_is_directory=True)
+    run("alias-parent/inside/bundle", "fixtures/synthetic-profile.json")
+    (work / "existing-output-link").symlink_to(plain, target_is_directory=True)
+    run("existing-output-link", "fixtures/synthetic-profile.json", expected=2)
     before = {p.name:p.read_bytes() for p in plain.iterdir()}
     run("plain", "fixtures/synthetic-profile.json", expected=2)
     assert before == {p.name:p.read_bytes() for p in plain.iterdir()}

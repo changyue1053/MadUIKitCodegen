@@ -61,7 +61,14 @@ def verify(stage, input_hash, node, fit_width, flatten, map_hash):
     require(isinstance(files, dict) and set(files) == expected, "Unexpected or missing generated files")
     for name, sha in files.items():
         path = stage / name
-        require(not any(p.is_symlink() for p in [path, *path.parents] if p != stage.parent), "Linked generated path")
+        # Confine this check to the generated bundle. Trusted host ancestors may
+        # legitimately be aliases, e.g. /var -> /private/var on macOS.
+        cursor = path
+        while True:
+            require(not cursor.is_symlink(), "Linked generated path")
+            if cursor == stage:
+                break
+            cursor = cursor.parent
         require(path.is_file() and isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{64}", sha), "Invalid file receipt")
         require(digest(path) == sha, f"Generated file hash mismatch: {name}")
     if map_hash:
