@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "binding": {
+    "instanceId": "10:2",
+    "componentKey": "synthetic_filter_tab_v1",
+    "labelProperty": "Label#40:2",
+    "enabledProperty": "Enabled#40:3",
+    "labelNodeId": "I10:2;40:2"
+  }
+}

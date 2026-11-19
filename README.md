@@ -255,3 +255,9 @@ Opt-in `--font-map` binds one named family to a required generated `FontFamily`
 parameter while retaining numeric text styling. Use `generate-verified.py`
 for isolated generation and `--verify-only` before consumer compilation.
 See [font-role mapping scope and tests](docs/FONT-ROLE-MAPPING.md).
+
+### Optional controlled SDK component binding
+
+A narrow synthetic filter-tab binding is available with `--flatten-instances --component-map`.
+See [the contract and verification boundaries](docs/component-binding.md) before adoption.
+It requires app-owned state/actions and never infers bindings from component names alone.

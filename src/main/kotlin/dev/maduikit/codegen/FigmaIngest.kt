@@ -8,10 +8,10 @@ internal const val FIGMA_ADAPTER_VERSION = 2
 
 internal data class FigmaResult(val normalized: JsonObject?, val sourceVersion: String?, val problems: List<Problem>)
 
-internal fun normalizeFigmaNodes(value: JsonElement, target: String, fitWidth: Boolean = false, flattenInstances: Boolean = false, asset: ExplicitAsset? = null, fontRole: FontRole? = null): FigmaResult =
-    FigmaNodesReader(fitWidth, flattenInstances, asset, fontRole).read(value, target)
+internal fun normalizeFigmaNodes(value: JsonElement, target: String, fitWidth: Boolean = false, flattenInstances: Boolean = false, asset: ExplicitAsset? = null, fontRole: FontRole? = null, componentBinding: ComponentBinding? = null): FigmaResult =
+    FigmaNodesReader(fitWidth, flattenInstances, asset, fontRole, componentBinding).read(value, target)
 
-private class FigmaNodesReader(private val fitWidth: Boolean, private val flattenInstances: Boolean, private val asset: ExplicitAsset?, private val fontRole: FontRole?) {
+private class FigmaNodesReader(private val fitWidth: Boolean, private val flattenInstances: Boolean, private val asset: ExplicitAsset?, private val fontRole: FontRole?, private val componentBinding: ComponentBinding?) {
     private val problems = mutableListOf<Problem>()
     private var visited = 0
     private var assetUsed = false
@@ -39,7 +39,12 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
         if (doc.str("type") != "FRAME") problem(target, "$metadata.document.type", "Root document must be a FRAME")
         if (doc.flag("visible") == false) problem(target, "$metadata.document.visible", "Root Frame is hidden")
         val normalized = convert(doc, "$metadata.document", null, 0, true)?.let { frame ->
-            buildJsonObject { put("schemaVersion", 1); put("frame", frame) }
+            buildJsonObject { put("schemaVersion", 1); put("frame", if (componentBinding == null) frame else {
+                val slot = (frame["children"] as JsonArray).single().jsonObject
+                JsonObject(frame + mapOf("componentRole" to JsonPrimitive("filterTabs"), "children" to JsonArray(listOf(
+                    JsonObject(slot + mapOf("componentRole" to JsonPrimitive("filterTab"), "enabled" to JsonPrimitive(componentBinding.enabled)))
+                ))))
+            }) }
         }
         if (asset != null && !assetUsed)
             problem(asset.nodeId, "$.assetMap.nodeId", if (asset.atomicPath.isEmpty())

@@ -51,6 +51,8 @@ private data class Node(
     val letterSpacing: BigDecimal? = null,
     val fontFamily: String? = null,
     val fontRole: String? = null,
+    val componentRole: String? = null,
+    val enabled: Boolean = true,
     val mainCentered: Boolean = false,
     val mainSpaceBetween: Boolean = false,
     val crossCentered: Boolean = false,
@@ -60,6 +62,7 @@ private data class Node(
 )
 
 private class Reader(private val asset: ExplicitAsset?, private val fontRole: FontRole? = null) {
+    var componentBinding: ComponentBinding? = null
     val problems = mutableListOf<Problem>()
     private val ids = mutableSetOf<String>()
 
@@ -198,7 +201,17 @@ private class Reader(private val asset: ExplicitAsset?, private val fontRole: Fo
         when (type) {
             "Column", "Row", "Box" -> {
                 val allowed = if (type == "Box") boxFields - setOf("gap", "mainCentered", "mainSpaceBetween", "crossCentered") else boxFields + "sourceComponentId"
-                checkKeys(obj, allowed + setOf("id", "type", "children"), id, path)
+                checkKeys(obj, allowed + setOf("id", "type", "children") + (if (componentBinding != null) setOf("componentRole", "enabled") else emptySet()), id, path)
+                val componentRole = if (componentBinding != null) string("componentRole") else null
+                val expectedRole = when (id) {
+                    componentBinding?.rootId -> "filterTabs"
+                    componentBinding?.instanceId -> "filterTab"
+                    else -> null
+                }
+                if (componentRole != expectedRole || (componentRole != null && type != "Row"))
+                    error(id, "$path.componentRole", "Unexpected component binding annotation")
+                if (componentRole == "filterTab" && (obj["enabled"] as? JsonPrimitive)?.booleanOrNull != componentBinding?.enabled)
+                    error(id, "$path.enabled", "Component Enabled mismatch")
                 val childField = obj["children"] as? JsonArray
                 if (childField == null) error(id, "$path.children", "Expected children array")
                 if (childField != null && childField.size > 150) {
@@ -245,7 +258,8 @@ private class Reader(private val asset: ExplicitAsset?, private val fontRole: Fo
                 if (sourceComponentId != null && (sourceComponentId.length > 64 || !figmaComponentId.matches(sourceComponentId)))
                     error(id, "$path.sourceComponentId", "Expected canonical Figma component ID")
                 return Node(
-                    sourceComponentId = sourceComponentId,
+                    sourceComponentId = sourceComponentId, componentRole = componentRole,
+                    enabled = if (componentRole == "filterTab") componentBinding!!.enabled else true,
                     mainCentered = mainCentered, mainSpaceBetween = mainSpaceBetween, crossCentered = flag("crossCentered"),
                     id = id, type = type, gap = gap,
                     padding = padding, fillWidth = fillWidth,
@@ -328,7 +342,7 @@ private fun Node.containsRoundedClip(): Boolean = (clip && cornerRadii != null) 
 private fun Node.containsRoundedUnclippedGradient(): Boolean =
     (!clip && gradient != null && cornerRadii != null) || children.any(Node::containsRoundedUnclippedGradient)
 
-private class Emitter(private val function: String, private val fontRole: FontRole? = null) {
+private class Emitter(private val function: String, private val fontRole: FontRole? = null, private val componentBinding: ComponentBinding? = null) {
     private val lines = mutableListOf<String>()
     val source = linkedMapOf<String, Int>()
     val sourceComponents = linkedMapOf<String, String>()
@@ -378,11 +392,13 @@ private class Emitter(private val function: String, private val fontRole: FontRo
             "import androidx.compose.ui.geometry.Offset",
             "import androidx.compose.ui.graphics.Brush",
         )
+        if (componentBinding != null) lines += listOf("import com.mad.maduikit.MadFilterTabs", "import com.mad.maduikit.MadFilterTab")
         lines += listOf(
             "",
             "@Composable",
             when {
                 function == NORMALIZED_SCREEN -> "fun $function(onSave: () -> Unit = {}) {"
+                componentBinding != null -> "fun $function(selected: Boolean, onSelect: () -> Unit" + (fontRole?.let { ", ${it.parameter}: FontFamily" } ?: "") + ") {"
                 fontRole != null -> "fun $function(${fontRole.parameter}: FontFamily) {"
                 else -> "fun $function() {"
             },
@@ -409,7 +425,15 @@ private class Emitter(private val function: String, private val fontRole: FontRo
         return lines.joinToString("\n", postfix = "\n")
     }
 
-    private fun emit(node: Node, depth: Int) {
+    private fun emit(node: Node, depth: Int, insideSlot: Boolean = false) {
+        if (node.componentRole == "filterTab" && !insideSlot) {
+            val firstLine = lines.size + 1
+            lines += "    ".repeat(depth) + "MadFilterTab(selected = selected, onSelect = onSelect, enabled = ${node.enabled}) {"
+            emit(node, depth + 1, true)
+            lines += "    ".repeat(depth) + "}"
+            source[node.id] = firstLine
+            return
+        }
         val indent = "    ".repeat(depth)
         source[node.id] = lines.size + 1
         node.sourceComponentId?.let { sourceComponents[node.id] = it }
@@ -462,7 +486,8 @@ private class Emitter(private val function: String, private val fontRole: FontRo
                         }
                     }
                 }
-                val call = if (params.isEmpty()) node.type else node.type + params.joinToString(", ", "(", ")")
+                val name = if (node.componentRole == "filterTabs") "MadFilterTabs" else node.type
+                val call = if (params.isEmpty()) name else name + params.joinToString(", ", "(", ")")
                 lines += "$indent$call {"
                 node.children.forEach { emit(it, depth + 1) }
                 lines += "$indent}"
@@ -502,7 +527,7 @@ private fun writeJson(path: Path, value: JsonElement) {
     Files.writeString(path, json.encodeToString(JsonElement.serializer(), value) + "\n", UTF_8)
 }
 
-private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: Boolean = false, flattenInstances: Boolean = false, assetMap: Path? = null, fontMap: Path? = null): Int {
+private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: Boolean = false, flattenInstances: Boolean = false, assetMap: Path? = null, fontMap: Path? = null, componentMap: Path? = null): Int {
     val screen = if (figmaNode == null) NORMALIZED_SCREEN else FIGMA_SCREEN
     val kotlinFile = "$screen.generated.kt"
     if (!Files.isRegularFile(input) || Files.size(input) > MAX_INPUT_BYTES) {
@@ -536,16 +561,31 @@ private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: 
             null
         }
     }
+    var componentBinding: ComponentBinding? = null
     val reader = Reader(asset, fontRole)
     fontIssue?.let { reader.problems += Problem("document", "$.fontMap", it) }
     assetIssue?.let { reader.problems += Problem("document", "$.assetMap", it) }
     var figmaVersion: String? = null
     val root = try {
-        val value = json.parseToJsonElement(UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString())
+        val raw = UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString()
+        if (componentMap != null) validateBindingJson(raw)
+        val value = json.parseToJsonElement(raw)
         if (assetIssue != null || fontIssue != null) null
         else if (figmaNode == null) reader.document(value)
         else {
-            val result = normalizeFigmaNodes(value, figmaNode, fitWidth, flattenInstances, asset, fontRole)
+            if (componentMap != null) {
+                try {
+                    if (!flattenInstances || asset != null || fitWidth) throw BindingProblem(figmaNode, "Binding requires expanded fixed layout without asset map")
+                    componentBinding = readComponentBinding(componentMap, value, figmaNode)
+                    reader.componentBinding = componentBinding
+                } catch (error: BindingProblem) {
+                    reader.problems += Problem(error.nodeId, "$.componentMap", error.message ?: "Invalid component binding")
+                } catch (_: IllegalArgumentException) {
+                    reader.problems += Problem(figmaNode, "$.componentMap", "Invalid component map")
+                }
+            }
+            val result = if (reader.problems.isNotEmpty()) FigmaResult(null, null, emptyList())
+                else normalizeFigmaNodes(value, figmaNode, fitWidth, flattenInstances, asset, fontRole, componentBinding)
             figmaVersion = result.sourceVersion
             reader.problems.addAll(result.problems)
             if (result.normalized == null || result.problems.isNotEmpty()) null
@@ -592,12 +632,13 @@ private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: 
         System.err.println("Generation failed; see diagnostics.json. Any earlier output is not from this run.")
         return 2
     }
-    val emitter = Emitter(screen, fontRole)
+    val emitter = Emitter(screen, fontRole, componentBinding)
     val code = emitter.render(root)
     Files.writeString(output.resolve(kotlinFile), code, UTF_8)
     writeJson(output.resolve("source-map.json"), buildJsonObject {
         put("schemaVersion", 1)
         put("file", kotlinFile)
+        componentBinding?.let { put("componentBinding", it.receipt()) }
         putJsonObject("nodeLines") { emitter.source.forEach { (id, line) -> put(id, line) } }
         if (emitter.sourceComponents.isNotEmpty()) putJsonObject("instanceComponents") {
             emitter.sourceComponents.forEach { (instanceId, componentId) -> put(instanceId, componentId) }
@@ -616,7 +657,8 @@ private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: 
             figmaVersion?.let { put("figmaSourceVersion", it) }
         }
         put("inputSha256", inputHash)
-        put("sdkRequired", false)
+        put("sdkRequired", componentBinding != null)
+        componentBinding?.let { put("componentMapSha256", it.mapHash); put("componentBinding", it.receipt()) }
         if (fontRole != null) {
             put("fontMapSha256", fontRole.mapHash)
             putJsonObject("fontRoleBinding") { put("version", 1); put("family", fontRole.family); put("role", fontRole.role); put("parameter", fontRole.parameter) }
@@ -661,12 +703,14 @@ fun main(args: Array<String>) {
     var flattenInstances = false
     var assetMapArgument: String? = null
     var fontMapArgument: String? = null
+    var componentMapArgument: String? = null
     var validFlags = true
     var i = 7
     while (i < args.size && validFlags) {
         when (args[i++]) {
             "--fit-width" -> if (fitWidth) validFlags = false else fitWidth = true
             "--flatten-instances" -> if (flattenInstances) validFlags = false else flattenInstances = true
+            "--component-map" -> if (componentMapArgument != null || i >= args.size || args[i].startsWith("--")) validFlags = false else componentMapArgument = args[i++]
             "--font-map" -> if (fontMapArgument != null || i >= args.size || args[i].startsWith("--")) validFlags = false else fontMapArgument = args[i++]
             "--asset-map" -> if (assetMapArgument != null || i >= args.size || args[i].startsWith("--"))
                 validFlags = false else assetMapArgument = args[i++]
@@ -677,11 +721,11 @@ fun main(args: Array<String>) {
         args[3] == "--node" && args[5] == "--out"
     if (!normalized && !figma) {
         System.err.println("Usage: maduikit-codegen generate --input <normalized-frame.json> --out <directory>")
-        System.err.println("   or: maduikit-codegen generate-figma --input <file-nodes.json> --node <id> --out <directory> [--fit-width] [--flatten-instances] [--asset-map <local-map.json>] [--font-map <font-map.json>]")
+        System.err.println("   or: maduikit-codegen generate-figma --input <file-nodes.json> --node <id> --out <directory> [--fit-width] [--flatten-instances] [--asset-map <local-map.json>] [--font-map <font-map.json>] [--component-map <component-map.json>]")
         exitProcess(2)
     }
     try {
-        if (figma) exitProcess(run(Path(args[2]), Path(args[6]), args[4], fitWidth, flattenInstances, assetMapArgument?.let { Path(it) }, fontMapArgument?.let { Path(it) }))
+        if (figma) exitProcess(run(Path(args[2]), Path(args[6]), args[4], fitWidth, flattenInstances, assetMapArgument?.let { Path(it) }, fontMapArgument?.let { Path(it) }, componentMapArgument?.let { Path(it) }))
         exitProcess(run(Path(args[2]), Path(args[4])))
     } catch (err: java.io.IOException) {
         System.err.println("File I/O failed: ${err.javaClass.simpleName}")

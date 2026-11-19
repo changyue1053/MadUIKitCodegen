@@ -53,7 +53,7 @@ def font_contract(path):
     return resolved, digest(resolved), dict(version=1, family=family, role=role, parameter="fontRole" + role.title())
 
 
-def verify(stage, input_hash, node, fit_width, flatten, map_hash, font_hash=None, font_binding=None):
+def verify(stage, input_hash, node, fit_width, flatten, map_hash, font_hash=None, font_binding=None, component_hash=None, component_binding=None):
     manifest = read_json(stage / "manifest.json")
     diagnostics = read_json(stage / "diagnostics.json")
     require(manifest.get("schemaVersion") == 1 and manifest.get("target") == "cmp", "Unsupported manifest")
@@ -74,6 +74,9 @@ def verify(stage, input_hash, node, fit_width, flatten, map_hash, font_hash=None
     else:
         require(node and isinstance(font_binding, dict), "Font binding requires Figma input")
         require(type(manifest["fontRoleBinding"].get("version")) is int, "Invalid font binding version")
+    require(manifest.get("componentMapSha256") == component_hash and manifest.get("componentBinding") == component_binding, "Component binding receipt mismatch")
+    require(manifest.get("sdkRequired") is (component_binding is not None), "SDK requirement mismatch")
+    expected_signature = "selected: Boolean, onSelect: () -> Unit" if component_binding else ""
     expected = {screen}
     if map_hash:
         asset = manifest.get("decorativeAsset")
@@ -101,6 +104,7 @@ def verify(stage, input_hash, node, fit_width, flatten, map_hash, font_hash=None
         require(files[asset["file"]] == asset.get("sha256"), "Asset receipt mismatch")
     source_map = read_json(stage / "source-map.json")
     require(source_map.get("file") == screen, "Source map file mismatch")
+    require(source_map.get("componentBinding") == component_binding, "Source component trace mismatch")
     # Metadata is not hashed by the generator; it is checked for consistency, not authenticated.
     allowed = expected | {"manifest.json", "diagnostics.json", "source-map.json"}
     if node:
@@ -118,16 +122,32 @@ def verify(stage, input_hash, node, fit_width, flatten, map_hash, font_hash=None
         bound = list(roles(normalized))
         code = (stage / screen).read_text(encoding="utf-8")
         signatures = re.findall(r"^fun FigmaProfileScreen\(([^\n]*)\) \{$", code, re.MULTILINE)
+        frame = normalized["frame"]
+        roles_present = []
+        def component_roles(v):
+            if isinstance(v, dict):
+                if "componentRole" in v: roles_present.append((v.get("id"), v["componentRole"]))
+                for child in v.values(): component_roles(child)
+            elif isinstance(v, list):
+                for child in v: component_roles(child)
+        component_roles(frame)
+        if component_binding:
+            require(roles_present == [(node,"filterTabs"),(component_binding["instanceId"],"filterTab")], "Component normalized role mismatch")
+            require(frame["children"][0].get("enabled") is component_binding["enabled"], "Component enabled mismatch")
+            enabled = str(component_binding["enabled"]).lower()
+            require(code.count("MadFilterTab(selected = selected, onSelect = onSelect, enabled = " + enabled + ") {") == 1, "Controlled component call mismatch")
+        else:
+            require(not roles_present, "Missing component map")
         if font_binding:
             require(bound and set(bound) == {font_binding["role"]}, "Normalized font role mismatch")
             parameter = font_binding["parameter"]
-            require(signatures == [f"{parameter}: FontFamily"], "Missing required font parameter")
+            require(signatures == [(expected_signature + ", " if expected_signature else "") + f"{parameter}: FontFamily"], "Missing required font parameter")
             # Ignore text literal contents when counting generated callsite arguments.
             calls = re.findall(r'^\s*Text\(text = "(?:\\.|[^"\\])*",(.*)$', code, re.MULTILINE)
             count = sum(len(re.findall(r"\bfontFamily = " + parameter + r"(?=,|\))", call)) for call in calls)
             require(count == len(bound), "Font callsite binding mismatch")
         else:
-            require(not bound and signatures == [""], "Missing font map for generated font binding")
+            require(not bound and signatures == [expected_signature], "Missing font map for generated font binding")
         allowed.add("normalized-frame.json")
     actual = {p.relative_to(stage).as_posix() for p in stage.rglob("*") if not p.is_dir() or p.is_symlink()}
     require(actual == allowed, "Unexpected output contents")
@@ -144,23 +164,32 @@ def main():
     parser.add_argument("--flatten-instances", action="store_true")
     parser.add_argument("--asset-map", type=Path)
     parser.add_argument("--font-map", type=Path)
+    parser.add_argument("--component-map", type=Path)
     args = parser.parse_args()
     stage = None
     try:
-        require(args.node or not (args.fit_width or args.flatten_instances or args.asset_map or args.font_map), "Figma flags require --node")
+        require(args.node or not (args.fit_width or args.flatten_instances or args.asset_map or args.font_map or args.component_map), "Figma flags require --node")
         output = args.out.absolute()
         require(args.verify_only or not os.path.lexists(output), "Output already exists; choose a new directory")
         require(output.parent.is_dir(), "Output parent must already exist")
         input_hash = digest(args.input)
         map_hash = digest(args.asset_map) if args.asset_map else None
         font_path, font_hash, font_binding = font_contract(args.font_map) if args.font_map else (None, None, None)
+        component_path = args.component_map.resolve(strict=True) if args.component_map else None
+        component_hash = digest(component_path) if component_path else None
+        component_binding = None
+        if component_path:
+            from component_binding_contract import validate, read as read_component_json
+            require(not args.component_map.is_symlink() and args.flatten_instances and not args.fit_width and not args.asset_map, "Component map requires fixed expanded layout")
+            component_binding = dict(version=1, **validate(read_component_json(args.input), read_component_json(component_path, sidecar=True), args.node))
         if args.verify_only:
             require(output.is_dir() and not output.is_symlink(), "Missing or linked bundle")
-            verify(output, input_hash, args.node, args.fit_width, args.flatten_instances, map_hash, font_hash, font_binding)
+            verify(output, input_hash, args.node, args.fit_width, args.flatten_instances, map_hash, font_hash, font_binding, component_hash, component_binding)
             require(digest(args.input) == input_hash, "Input changed during verification")
             require(not args.asset_map or digest(args.asset_map) == map_hash, "Asset map changed during verification")
             if args.font_map:
                 require(font_contract(args.font_map) == (font_path, font_hash, font_binding), "Font map changed during verification")
+            require(not component_path or (not args.component_map.is_symlink() and args.component_map.resolve(strict=True) == component_path and digest(component_path) == component_hash), "Component map changed during verification")
             print("Verified existing bundle; consumer may compile immediately without changing inputs")
             return 0
         require(args.launcher, "Generation requires --launcher")
@@ -177,13 +206,16 @@ def main():
             command += ["--asset-map", str(args.asset_map.absolute())]
         if font_path:
             command += ["--font-map", str(font_path)]
+        if component_path:
+            command += ["--component-map", str(component_path)]
         result = subprocess.run(command, check=False)
         require(result.returncode == 0, f"Generator exited {result.returncode}; nothing published")
         require(digest(args.input) == input_hash, "Input changed during generation")
         require(not args.asset_map or digest(args.asset_map) == map_hash, "Asset map changed during generation")
         if args.font_map:
             require(font_contract(args.font_map) == (font_path, font_hash, font_binding), "Font map changed during generation")
-        verify(stage, input_hash, args.node, args.fit_width, args.flatten_instances, map_hash, font_hash, font_binding)
+        verify(stage, input_hash, args.node, args.fit_width, args.flatten_instances, map_hash, font_hash, font_binding, component_hash, component_binding)
+        require(not component_path or (args.component_map.resolve(strict=True) == component_path and digest(component_path) == component_hash), "Component map drift")
         require(not os.path.lexists(output), "Output appeared during generation")
         stage.rename(output)
         stage = None

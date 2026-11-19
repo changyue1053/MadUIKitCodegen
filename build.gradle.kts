@@ -84,3 +84,9 @@ val fontRoleSmokeTest by tasks.registering(Exec::class) {
     commandLine("python3", "scripts/font-role-smoke.py", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
 }
 tasks.check { dependsOn(fontRoleSmokeTest) }
+
+val componentBindingSmokeTest by tasks.registering(Exec::class) {
+    dependsOn(tasks.installDist)
+    commandLine("python3", "scripts/component-binding-smoke.py", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
+}
+tasks.check { dependsOn(componentBindingSmokeTest) }

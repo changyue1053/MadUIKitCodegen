@@ -1,0 +1,92 @@
+{
+  "nodes": {
+    "10:1": {
+      "document": {
+        "id": "10:1",
+        "type": "FRAME",
+        "name": "Public font role probe",
+        "layoutMode": "HORIZONTAL",
+        "layoutSizingHorizontal": "FIXED",
+        "layoutSizingVertical": "FIXED",
+        "absoluteBoundingBox": {
+          "width": 240,
+          "height": 80
+        },
+        "fills": [
+          {
+            "type": "SOLID",
+            "color": {
+              "r": 1,
+              "g": 1,
+              "b": 1,
+              "a": 1
+            }
+          }
+        ],
+        "paddingLeft": 8,
+        "paddingTop": 8,
+        "itemSpacing": 8,
+        "children": [
+          {
+            "id": "10:2",
+            "name": "Synthetic Filter Tab",
+            "type": "INSTANCE",
+            "componentId": "40:1",
+            "layoutMode": "HORIZONTAL",
+            "layoutSizingHorizontal": "FIXED",
+            "layoutSizingVertical": "FIXED",
+            "absoluteBoundingBox": {
+              "width": 120,
+              "height": 48
+            },
+            "paddingLeft": 12,
+            "paddingTop": 12,
+            "children": [
+              {
+                "id": "I10:2;40:2",
+                "type": "TEXT",
+                "characters": "Books",
+                "layoutSizingHorizontal": "HUG",
+                "layoutSizingVertical": "HUG",
+                "style": {
+                  "fontFamily": "sans-serif",
+                  "fontSize": 16,
+                  "fontWeight": 400,
+                  "lineHeightPx": 24,
+                  "lineHeightUnit": "PIXELS"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": {
+                      "r": 0,
+                      "g": 0,
+                      "b": 0,
+                      "a": 1
+                    }
+                  }
+                ]
+              }
+            ],
+            "componentProperties": {
+              "Label#40:2": {
+                "type": "TEXT",
+                "value": "Books"
+              },
+              "Enabled#40:3": {
+                "type": "BOOLEAN",
+                "value": false
+              }
+            }
+          }
+        ]
+      },
+      "components": {
+        "40:1": {
+          "key": "synthetic_filter_tab_v1",
+          "name": "Synthetic Filter Tab"
+        }
+      }
+    }
+  }
+}
