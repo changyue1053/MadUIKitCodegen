@@ -21,6 +21,8 @@ internal data class ExplicitAsset(
     val bytes: ByteArray,
     val hash: String,
     val mapHash: String,
+    val atomicPath: List<String> = emptyList(),
+    val vectorIds: List<String> = emptyList(),
 ) {
     val route = decorativeInstanceChildId.matchEntire(nodeId)
     val expandedOwnerId get() = route?.groupValues?.get(1)
@@ -41,15 +43,32 @@ internal fun readExplicitAsset(path: Path): ExplicitAsset {
     val mapBytes = localBytes(mapPath, 4096)
     val map = Json.parseToJsonElement(UTF_8.newDecoder().decode(ByteBuffer.wrap(mapBytes)).toString()) as? JsonObject
         ?: throw IllegalArgumentException("Asset map must be a JSON object")
-    require(map.keys == setOf("schemaVersion", "nodeId", "file", "sha256") && map["schemaVersion"] == JsonPrimitive(1)) {
-        "Asset map requires only schemaVersion=1, nodeId, file and sha256"
+    val v2 = map["schemaVersion"] == JsonPrimitive(2)
+    val baseKeys = setOf("schemaVersion", "nodeId", "file", "sha256")
+    require(if (v2) map.keys == baseKeys + setOf("framePath", "vectorIds")
+            else map.keys == baseKeys && map["schemaVersion"] == JsonPrimitive(1)) {
+        "Expected schemaVersion=1 asset map, or schemaVersion=2 with explicit framePath and vectorIds"
     }
     fun string(key: String): String? = (map[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
-    val nodeId = string("nodeId")
-    require(nodeId != null && nodeId.length <= 64 && (figmaComponentId.matches(nodeId) ||
-        decorativeInstanceChildId.matches(nodeId))) {
-        "Asset map requires a canonical Figma node ID or a direct or single-wrapper expanded instance child ID"
+    val nested = Regex("I[0-9]+:[0-9]+(?:;[0-9]+:[0-9]+){1,6}")
+    fun validId(id: String) = id.length <= 64 && (figmaComponentId.matches(id) || nested.matches(id))
+    fun list(key: String, sizes: IntRange): List<String> {
+        val raw = map[key] as? JsonArray ?: error("Expected $key array")
+        require(raw.size in sizes) { "Invalid $key size" }
+        val ids = raw.map { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content ?: error("Expected $key string ID") }
+        require(ids.distinct().size == ids.size && ids.all(::validId)) { "Expected unique canonical IDs in $key" }
+        return ids
     }
+    val nodeId = string("nodeId")
+    require(nodeId != null && if (v2) validId(nodeId) else nodeId.length <= 64 &&
+        (figmaComponentId.matches(nodeId) || decorativeInstanceChildId.matches(nodeId))) {
+        if (v2) "Invalid atomic mapped node ID" else
+            "Asset map requires a canonical Figma node ID or a direct or single-wrapper expanded instance child ID"
+    }
+    val atomicPath = if (v2) list("framePath", 3..8) else emptyList()
+    val vectors = if (v2) list("vectorIds", 2..4) else emptyList()
+    require(!v2 || (atomicPath.last() == nodeId && figmaComponentId.matches(atomicPath.first()) &&
+        vectors.none { it in atomicPath })) { "Atomic mapping requires selected root, owner, frame and distinct vectors" }
     val file = string("file")
     require(file != null && Regex("mad_icon_[a-z][a-z0-9_]{0,38}\\.png").matches(file)) {
         "Resource file must be one lowercase mad_icon_*.png basename beside its map"
@@ -62,7 +81,7 @@ internal fun readExplicitAsset(path: Path): ExplicitAsset {
     val hash = sha256(payload)
     require(hash == declaredHash) { "Resource PNG bytes do not match the asset map SHA-256" }
     val (width, height) = inspectPng(payload)
-    return ExplicitAsset(nodeId, file.removeSuffix(".png"), width, height, payload, hash, sha256(mapBytes))
+    return ExplicitAsset(nodeId, file.removeSuffix(".png"), width, height, payload, hash, sha256(mapBytes), atomicPath, vectors)
 }
 
 // Narrow input profile: one small RGBA PNG, no ancillary chunks (e.g. profiles, APNG,

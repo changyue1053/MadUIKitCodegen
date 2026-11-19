@@ -212,3 +212,28 @@ python3 scripts/generate-verified.py \
 
 生成包内部仍拒绝符号链接；可信父目录的系统级别名（例如 macOS 的
 `/var` → `/private/var`）不属于生成包，不会被误判为生成素材链接。
+
+### Opt-in atomic decorative frames (asset map schema 2)
+
+For a small decorative illustration made from multiple vector layers, bind one
+approved transparent PNG to the **whole** FRAME, not to individual paths. This is
+not automatic flattening. Retain the ordinary `--flatten-instances` opt-in and
+use a schema-2 asset map with the existing `nodeId`, `file`, and `sha256`
+fields plus:
+
+- `framePath`: exact ordered IDs from the selected root, through at least one
+  expanded visual INSTANCE, to the asset FRAME; last ID equals `nodeId`.
+- `vectorIds`: the complete ordered list (2–4 entries) of direct visible VECTOR
+  children. Paths and vector IDs must be unique in the source.
+
+The FRAME has explicit fixed dimensions matching the PNG, no layout, clipping,
+paints, effects or interactions. Only small, contained visible VECTOR leaves
+with one normal solid fill are supported; the generator rejects extra or
+unknown visual features rather than discarding them. The PNG is an explicitly
+approved, hash-pinned, local representation, not synthesized or inferred by the
+generator. The generator checks layout, bounds, ancestry and asset integrity;
+the caller still must visually verify that the provided PNG represents the
+selected layer correctly. Existing schema-1 VECTOR maps are unchanged.
+
+`scripts/atomic-frame-smoke.py` constructs a generic three-bar illustration
+and validates deterministic emission and fail-closed rejection cases.

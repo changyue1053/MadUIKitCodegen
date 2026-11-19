@@ -16,6 +16,7 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
     private var visited = 0
     private var assetUsed = false
     private var assetWrapperUsed = false
+    
 
     fun read(value: JsonElement, target: String): FigmaResult {
         val idPattern = Regex("[0-9]+:[0-9]+")
@@ -40,7 +41,23 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
             buildJsonObject { put("schemaVersion", 1); put("frame", frame) }
         }
         if (asset != null && !assetUsed)
-            problem(asset.nodeId, "$.assetMap.nodeId", "Mapped VECTOR must be a visible leaf of the requested Frame")
+            problem(asset.nodeId, "$.assetMap.nodeId", if (asset.atomicPath.isEmpty())
+                "Mapped VECTOR must be a visible leaf of the requested Frame" else "Mapped atomic FRAME must exist in the requested Frame")
+        if (asset != null && asset.atomicPath.isNotEmpty()) {
+            val selected = (asset.atomicPath + asset.vectorIds).toSet()
+            val counts = mutableMapOf<String, Int>()
+            val pending = ArrayDeque<JsonObject>().apply { add(doc) }
+            var checked = 0
+            while (pending.isNotEmpty() && ++checked <= 300) {
+                val layer = pending.removeFirst()
+                layer.str("id")?.takeIf { it in selected }?.let { counts[it] = (counts[it] ?: 0) + 1 }
+                (layer["children"] as? JsonArray)?.forEach {
+                    if (it is JsonObject && pending.size <= 300) pending.add(it)
+                }
+            }
+            if (pending.isNotEmpty() || checked > 300 || selected.any { counts[it] != 1 })
+                problem(asset.nodeId, "$.assetMap.framePath", "Atomic source IDs must occur exactly once within 300 nodes")
+        }
         return FigmaResult(normalized, sourceVersion, problems.toList())
     }
 
@@ -51,10 +68,20 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
     private fun convert(
         node: JsonObject, path: String, parent: String?, depth: Int, root: Boolean = false,
         expandedParentId: String? = null, validatedWrapperId: String? = null,
+        ancestry: List<String> = emptyList(), owners: Set<String> = emptySet(),
     ): JsonObject? {
+        val id = node.str("id") ?: "(unknown)"
+        val currentPath = ancestry + id
+        val atomic = asset?.takeIf { it.atomicPath.isNotEmpty() }
+        if (atomic != null) {
+            if (atomic.atomicPath.take(currentPath.size) == currentPath) {
+                for (key in listOf("interactions", "reactions", "prototypeStartNodeID", "transitionNodeID", "flowStartingPoints"))
+                    if (node[key] != null && node[key] != JsonNull && node[key] != JsonArray(emptyList()))
+                        problem(id, "$path.$key", "Atomic mapping disallows interactive ancestors")
+            }
+        }
         // Hidden descendants do not contribute pixels or layout in a Figma auto-layout frame.
         if (node.flag("visible") == false) return null
-        val id = node.str("id") ?: "(unknown)"
         if (depth > 24 || ++visited > 300) {
             problem(id, path, "Frame exceeds the P1 limit of 300 nodes / 24 levels")
             return null
@@ -117,7 +144,73 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
             if (raw !is JsonArray || raw.any { (it as? JsonObject)?.flag("visible") != false }) fail(field, "Visible $field are not supported")
         }
 
-        val isAssetWrapper = asset != null && asset.inertWrapperId == id
+        if (atomic != null && atomic.nodeId == id) {
+            assetUsed = true
+            if (root || !flattenInstances || owners.isEmpty() || currentPath != atomic.atomicPath ||
+                node.str("type") != "FRAME" || node.str("layoutMode") != "NONE") {
+                fail("id", "Atomic asset requires exact declared ancestry through an expanded INSTANCE to a non-root NONE-layout FRAME")
+                return null
+            }
+            val encodedOwners = (currentPath + atomic.vectorIds).filter { it.startsWith("I") }
+                .map { it.substringAfter("I").substringBefore(';') }
+            if (encodedOwners.any { it !in owners })
+                fail("id", "Encoded layer IDs must name an actual expanded numeric INSTANCE ancestor")
+            val allowed = setOf("id", "name", "type", "layoutMode", "visible", "absoluteBoundingBox",
+                "layoutSizingHorizontal", "layoutSizingVertical", "layoutPositioning", "layoutGrow", "layoutAlign",
+                "fills", "children", "isMask", "clipsContent", "opacity", "blendMode", "rotation",
+                "interactions", "reactions", "effects", "strokes")
+            for (field in node.keys - allowed) fail(field, "Unsupported atomic FRAME field")
+            for (field in listOf("fills", "interactions", "reactions", "effects", "strokes")) absent(field)
+            if (node["clipsContent"] != null && node.flag("clipsContent") != false)
+                fail("clipsContent", "Atomic FRAME cannot clip")
+            expect("blendMode", setOf("NORMAL")); expect("layoutAlign", setOf("INHERIT")); zero("layoutGrow")
+            for (axis in listOf("layoutSizingHorizontal", "layoutSizingVertical"))
+                if (node.str(axis) != "FIXED") fail(axis, "Atomic FRAME requires explicit FIXED dimensions")
+            val bounds = node["absoluteBoundingBox"] as? JsonObject
+            val width = dimension("width")
+            val height = dimension("height")
+            if (width?.compareTo(atomic.width.toBigDecimal()) != 0 || height?.compareTo(atomic.height.toBigDecimal()) != 0)
+                fail("absoluteBoundingBox", "Atomic FRAME dimensions must match the PNG")
+            val x = bounds?.num("x")
+            val y = bounds?.num("y")
+            val leaves = (node["children"] as? JsonArray)?.map { it as? JsonObject }
+            if (leaves?.map { it?.str("id") } != atomic.vectorIds) fail("children", "Expected exact declared VECTOR IDs and order")
+            leaves.orEmpty().take(4).forEachIndexed { i, leaf ->
+                val key = "children[$i]"
+                if (leaf == null || leaf.str("type") != "VECTOR" || (leaf["visible"] != null && leaf.flag("visible") != true)) {
+                    fail(key, "Only visible direct VECTOR leaves are supported")
+                    return@forEachIndexed
+                }
+                val leafKeys = setOf("id", "name", "type", "visible", "absoluteBoundingBox", "fills",
+                    "opacity", "blendMode", "isMask", "interactions", "reactions", "strokes", "effects")
+                for (field in leaf.keys - leafKeys) fail("$key.$field", "Unsupported atomic VECTOR field")
+                for (field in listOf("interactions", "reactions", "strokes", "effects"))
+                    if (leaf[field] != null && leaf[field] != JsonArray(emptyList())) fail("$key.$field", "Unsupported atomic VECTOR feature")
+                if ((leaf["opacity"] != null && leaf.num("opacity")?.compareTo(BigDecimal.ONE) != 0) ||
+                    (leaf["blendMode"] != null && leaf.str("blendMode") != "NORMAL") ||
+                    (leaf["isMask"] != null && leaf.flag("isMask") != false))
+                    fail(key, "Atomic VECTOR requires normal unmasked opaque layer")
+                val paints = leaf["fills"] as? JsonArray
+                val paint = paints?.singleOrNull() as? JsonObject
+                if (paint?.str("type") != "SOLID" || (paint["visible"] != null && paint.flag("visible") != true) ||
+                    paint.keys.any { it !in setOf("type", "color", "visible", "opacity", "blendMode") } ||
+                    (paint["blendMode"] != null && paint.str("blendMode") != "NORMAL") ||
+                    parseFill(leaf["fills"], id, "$path.$key.fills", required = true) == null)
+                    fail("$key.fills", "Atomic VECTOR requires one visible solid paint")
+                val b = leaf["absoluteBoundingBox"] as? JsonObject
+                val lx = b?.num("x"); val ly = b?.num("y"); val lw = b?.num("width"); val lh = b?.num("height")
+                if (x == null || y == null || width == null || height == null || lx == null || ly == null ||
+                    lw == null || lh == null || lw.signum() <= 0 || lh.signum() <= 0 ||
+                    lx < x || ly < y || lx + lw > x + width || ly + lh > y + height)
+                    fail("$key.absoluteBoundingBox", "Atomic VECTOR bounds must be positive and inside the FRAME")
+            }
+            return buildJsonObject {
+                put("id", id); put("type", "DecorativeImage"); put("resourceName", atomic.resourceName)
+                width?.let { put("width", it.normalized()) }; height?.let { put("height", it.normalized()) }
+            }
+        }
+
+        val isAssetWrapper = asset != null && asset.atomicPath.isEmpty() && asset.inertWrapperId == id
         if (asset != null && isAssetWrapper) {
             if (assetWrapperUsed) fail("id", "Bound icon wrapper occurs more than once")
             assetWrapperUsed = true
@@ -326,7 +419,8 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
                             if (visited >= 300) fail("children", "Frame exceeds 300 nodes")
                             else if (child is JsonObject) convert(child, "$path.children[$index]", layout, depth + 1,
                                 expandedParentId = id.takeIf { type == "INSTANCE" && figmaComponentId.matches(it) },
-                                validatedWrapperId = id.takeIf { isAssetWrapper })?.let { add(it) }
+                                validatedWrapperId = id.takeIf { isAssetWrapper }, ancestry = currentPath,
+                                owners = if (type == "INSTANCE") owners + id else owners)?.let { add(it) }
                             else fail("children[$index]", "Expected child node object")
                         }
                     }
