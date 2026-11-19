@@ -50,6 +50,7 @@ private data class Node(
     val lineHeight: BigDecimal? = null,
     val letterSpacing: BigDecimal? = null,
     val fontFamily: String? = null,
+    val fontRole: String? = null,
     val mainCentered: Boolean = false,
     val mainSpaceBetween: Boolean = false,
     val crossCentered: Boolean = false,
@@ -58,7 +59,7 @@ private data class Node(
     val resourceName: String? = null,
 )
 
-private class Reader(private val asset: ExplicitAsset?) {
+private class Reader(private val asset: ExplicitAsset?, private val fontRole: FontRole? = null) {
     val problems = mutableListOf<Problem>()
     private val ids = mutableSetOf<String>()
 
@@ -266,7 +267,10 @@ private class Reader(private val asset: ExplicitAsset?) {
                 return Node(id = id, type = type, height = height, width = width, resourceName = resourceName)
             }
             "Text" -> {
-                checkKeys(obj, textFields + setOf("id", "type"), id, path)
+                checkKeys(obj, textFields + setOf("id", "type") + (if (fontRole != null) setOf("fontRole") else emptySet()), id, path)
+                val role = if (fontRole != null) string("fontRole") else null
+                if (role != null && (role != fontRole?.role || obj["fontFamily"] != null))
+                    error(id, "$path.fontRole", "Unbound or conflicting font role")
                 val family = string("fontFamily")
                 if (family != null && family !in setOf("SansSerif", "Serif", "Monospace"))
                     error(id, "$path.fontFamily", "Unsupported font family")
@@ -277,7 +281,7 @@ private class Reader(private val asset: ExplicitAsset?) {
                     fontSize = number("fontSize", 1, 128), color = color("color"), bold = bold, medium = medium,
                     width = number("width", min = 1), height = number("height", min = 1),
                     lineHeight = number("lineHeight", 1, 256), letterSpacing = number("letterSpacing", -100, 100),
-                    fontFamily = family)
+                    fontFamily = family, fontRole = role)
             }
             "Button" -> {
                 checkKeys(obj, setOf("id", "type", "text", "action", "fillWidth"), id, path)
@@ -324,7 +328,7 @@ private fun Node.containsRoundedClip(): Boolean = (clip && cornerRadii != null) 
 private fun Node.containsRoundedUnclippedGradient(): Boolean =
     (!clip && gradient != null && cornerRadii != null) || children.any(Node::containsRoundedUnclippedGradient)
 
-private class Emitter(private val function: String) {
+private class Emitter(private val function: String, private val fontRole: FontRole? = null) {
     private val lines = mutableListOf<String>()
     val source = linkedMapOf<String, Int>()
     val sourceComponents = linkedMapOf<String, String>()
@@ -377,7 +381,11 @@ private class Emitter(private val function: String) {
         lines += listOf(
             "",
             "@Composable",
-            if (function == NORMALIZED_SCREEN) "fun $function(onSave: () -> Unit = {}) {" else "fun $function() {",
+            when {
+                function == NORMALIZED_SCREEN -> "fun $function(onSave: () -> Unit = {}) {"
+                fontRole != null -> "fun $function(${fontRole.parameter}: FontFamily) {"
+                else -> "fun $function() {"
+            },
         )
         emit(root, 1)
         lines += "}"
@@ -471,6 +479,7 @@ private class Emitter(private val function: String) {
                     node.letterSpacing?.let { add("letterSpacing = ${formatted(it)}.sp") }
                     node.lineHeight?.let { add("lineHeight = ${formatted(it)}.sp") }
                     node.fontFamily?.let { add("fontFamily = FontFamily.$it") }
+                    node.fontRole?.let { add("fontFamily = ${checkNotNull(fontRole).parameter}") }
                     node.color?.let { add("color = Color(0x$it)") }
                     if (node.bold) add("fontWeight = FontWeight.Bold")
                     if (node.medium) add("fontWeight = FontWeight.Medium")
@@ -493,7 +502,7 @@ private fun writeJson(path: Path, value: JsonElement) {
     Files.writeString(path, json.encodeToString(JsonElement.serializer(), value) + "\n", UTF_8)
 }
 
-private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: Boolean = false, flattenInstances: Boolean = false, assetMap: Path? = null): Int {
+private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: Boolean = false, flattenInstances: Boolean = false, assetMap: Path? = null, fontMap: Path? = null): Int {
     val screen = if (figmaNode == null) NORMALIZED_SCREEN else FIGMA_SCREEN
     val kotlinFile = "$screen.generated.kt"
     if (!Files.isRegularFile(input) || Files.size(input) > MAX_INPUT_BYTES) {
@@ -515,15 +524,28 @@ private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: 
             null
         }
     }
-    val reader = Reader(asset)
+    var fontIssue: String? = null
+    val fontRole = fontMap?.let {
+        try {
+            readFontRole(it)
+        } catch (_: java.io.IOException) {
+            fontIssue = "Cannot read font map"
+            null
+        } catch (_: IllegalArgumentException) {
+            fontIssue = "Invalid font map: require one named family and a known unique role"
+            null
+        }
+    }
+    val reader = Reader(asset, fontRole)
+    fontIssue?.let { reader.problems += Problem("document", "$.fontMap", it) }
     assetIssue?.let { reader.problems += Problem("document", "$.assetMap", it) }
     var figmaVersion: String? = null
     val root = try {
         val value = json.parseToJsonElement(UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString())
-        if (assetIssue != null) null
+        if (assetIssue != null || fontIssue != null) null
         else if (figmaNode == null) reader.document(value)
         else {
-            val result = normalizeFigmaNodes(value, figmaNode, fitWidth, flattenInstances, asset)
+            val result = normalizeFigmaNodes(value, figmaNode, fitWidth, flattenInstances, asset, fontRole)
             figmaVersion = result.sourceVersion
             reader.problems.addAll(result.problems)
             if (result.normalized == null || result.problems.isNotEmpty()) null
@@ -570,7 +592,7 @@ private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: 
         System.err.println("Generation failed; see diagnostics.json. Any earlier output is not from this run.")
         return 2
     }
-    val emitter = Emitter(screen)
+    val emitter = Emitter(screen, fontRole)
     val code = emitter.render(root)
     Files.writeString(output.resolve(kotlinFile), code, UTF_8)
     writeJson(output.resolve("source-map.json"), buildJsonObject {
@@ -595,6 +617,10 @@ private fun run(input: Path, output: Path, figmaNode: String? = null, fitWidth: 
         }
         put("inputSha256", inputHash)
         put("sdkRequired", false)
+        if (fontRole != null) {
+            put("fontMapSha256", fontRole.mapHash)
+            putJsonObject("fontRoleBinding") { put("version", 1); put("family", fontRole.family); put("role", fontRole.role); put("parameter", fontRole.parameter) }
+        }
         if (asset != null) {
             put("assetMapSha256", asset.mapHash)
             putJsonObject("decorativeAsset") {
@@ -634,12 +660,14 @@ fun main(args: Array<String>) {
     var fitWidth = false
     var flattenInstances = false
     var assetMapArgument: String? = null
+    var fontMapArgument: String? = null
     var validFlags = true
     var i = 7
     while (i < args.size && validFlags) {
         when (args[i++]) {
             "--fit-width" -> if (fitWidth) validFlags = false else fitWidth = true
             "--flatten-instances" -> if (flattenInstances) validFlags = false else flattenInstances = true
+            "--font-map" -> if (fontMapArgument != null || i >= args.size || args[i].startsWith("--")) validFlags = false else fontMapArgument = args[i++]
             "--asset-map" -> if (assetMapArgument != null || i >= args.size || args[i].startsWith("--"))
                 validFlags = false else assetMapArgument = args[i++]
             else -> validFlags = false
@@ -649,11 +677,11 @@ fun main(args: Array<String>) {
         args[3] == "--node" && args[5] == "--out"
     if (!normalized && !figma) {
         System.err.println("Usage: maduikit-codegen generate --input <normalized-frame.json> --out <directory>")
-        System.err.println("   or: maduikit-codegen generate-figma --input <file-nodes.json> --node <id> --out <directory> [--fit-width] [--flatten-instances] [--asset-map <local-map.json>]")
+        System.err.println("   or: maduikit-codegen generate-figma --input <file-nodes.json> --node <id> --out <directory> [--fit-width] [--flatten-instances] [--asset-map <local-map.json>] [--font-map <font-map.json>]")
         exitProcess(2)
     }
     try {
-        if (figma) exitProcess(run(Path(args[2]), Path(args[6]), args[4], fitWidth, flattenInstances, assetMapArgument?.let { Path(it) }))
+        if (figma) exitProcess(run(Path(args[2]), Path(args[6]), args[4], fitWidth, flattenInstances, assetMapArgument?.let { Path(it) }, fontMapArgument?.let { Path(it) }))
         exitProcess(run(Path(args[2]), Path(args[4])))
     } catch (err: java.io.IOException) {
         System.err.println("File I/O failed: ${err.javaClass.simpleName}")

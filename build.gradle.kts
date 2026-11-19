@@ -79,3 +79,8 @@ val mediumWeightSmokeTest by tasks.registering(Exec::class) {
     commandLine("python3", "scripts/medium-weight-smoke.py", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
 }
 tasks.check { dependsOn(mediumWeightSmokeTest) }
+val fontRoleSmokeTest by tasks.registering(Exec::class) {
+    dependsOn(tasks.installDist)
+    commandLine("python3", "scripts/font-role-smoke.py", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
+}
+tasks.check { dependsOn(fontRoleSmokeTest) }

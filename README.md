@@ -248,3 +248,10 @@ distinct medium face. Schema 1 remains accepted: the old regular default and
 `bold: true` representation keep their existing output. Medium and bold cannot
 both be enabled. Unsupported weights, textual weights, and malformed flags fail
 with diagnostics instead of rounding or choosing a fallback.
+
+### Consumer-owned named fonts
+
+Opt-in `--font-map` binds one named family to a required generated `FontFamily`
+parameter while retaining numeric text styling. Use `generate-verified.py`
+for isolated generation and `--verify-only` before consumer compilation.
+See [font-role mapping scope and tests](docs/FONT-ROLE-MAPPING.md).

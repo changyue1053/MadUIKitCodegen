@@ -8,13 +8,14 @@ internal const val FIGMA_ADAPTER_VERSION = 2
 
 internal data class FigmaResult(val normalized: JsonObject?, val sourceVersion: String?, val problems: List<Problem>)
 
-internal fun normalizeFigmaNodes(value: JsonElement, target: String, fitWidth: Boolean = false, flattenInstances: Boolean = false, asset: ExplicitAsset? = null): FigmaResult =
-    FigmaNodesReader(fitWidth, flattenInstances, asset).read(value, target)
+internal fun normalizeFigmaNodes(value: JsonElement, target: String, fitWidth: Boolean = false, flattenInstances: Boolean = false, asset: ExplicitAsset? = null, fontRole: FontRole? = null): FigmaResult =
+    FigmaNodesReader(fitWidth, flattenInstances, asset, fontRole).read(value, target)
 
-private class FigmaNodesReader(private val fitWidth: Boolean, private val flattenInstances: Boolean, private val asset: ExplicitAsset?) {
+private class FigmaNodesReader(private val fitWidth: Boolean, private val flattenInstances: Boolean, private val asset: ExplicitAsset?, private val fontRole: FontRole?) {
     private val problems = mutableListOf<Problem>()
     private var visited = 0
     private var assetUsed = false
+    private var fontRoleUsed = false
     private var assetWrapperUsed = false
     
 
@@ -58,6 +59,7 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
             if (pending.isNotEmpty() || checked > 300 || selected.any { counts[it] != 1 })
                 problem(asset.nodeId, "$.assetMap.framePath", "Atomic source IDs must occur exactly once within 300 nodes")
         }
+        if (fontRole != null && !fontRoleUsed) problem("document", "$.fontMap", "Mapped family was not used by visible text")
         return FigmaResult(normalized, sourceVersion, problems.toList())
     }
 
@@ -452,7 +454,9 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
                 val weight = style.num("fontWeight")
                 if (style["fontWeight"] != null && weight?.stripTrailingZeros()?.toPlainString() !in setOf("400", "500", "700"))
                     fail("style.fontWeight", "Only regular (400), medium (500), and bold (700) are supported")
-                val family = when (style.str("fontFamily")?.lowercase()) {
+                val mapped = fontRole?.takeIf { it.family == style.str("fontFamily") }
+                if (mapped != null) fontRoleUsed = true
+                val family = if (mapped != null) null else when (style.str("fontFamily")?.lowercase()) {
                     "sans-serif" -> "SansSerif"; "serif" -> "Serif"; "monospace" -> "Monospace"
                     else -> { fail("style.fontFamily", "Named font requires an explicit font asset/mapping; P1 only accepts generic sans-serif/serif/monospace"); null }
                 }
@@ -488,6 +492,7 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
                     chars?.let { put("text", it) }
                     size?.let { put("fontSize", it.normalized()) }
                     family?.let { put("fontFamily", it) }
+                    mapped?.let { put("fontRole", it.role) }
                     if (weight?.compareTo(500.toBigDecimal()) == 0) put("medium", true)
                     if (weight?.compareTo(700.toBigDecimal()) == 0) put("bold", true)
                     lineHeight?.let { put("lineHeight", it.normalized()) }
