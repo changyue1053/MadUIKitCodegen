@@ -450,8 +450,8 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
                 val resize = style.str("textAutoResize")
                 if (resize !in setOf(null, "NONE", "HEIGHT", "WIDTH_AND_HEIGHT")) fail("style.textAutoResize", "Unsupported text resize mode")
                 val weight = style.num("fontWeight")
-                if (style["fontWeight"] != null && weight?.stripTrailingZeros()?.toPlainString() !in setOf("400", "700"))
-                    fail("style.fontWeight", "Only regular (400) and bold (700) are supported")
+                if (style["fontWeight"] != null && weight?.stripTrailingZeros()?.toPlainString() !in setOf("400", "500", "700"))
+                    fail("style.fontWeight", "Only regular (400), medium (500), and bold (700) are supported")
                 val family = when (style.str("fontFamily")?.lowercase()) {
                     "sans-serif" -> "SansSerif"; "serif" -> "Serif"; "monospace" -> "Monospace"
                     else -> { fail("style.fontFamily", "Named font requires an explicit font asset/mapping; P1 only accepts generic sans-serif/serif/monospace"); null }
@@ -488,6 +488,7 @@ private class FigmaNodesReader(private val fitWidth: Boolean, private val flatte
                     chars?.let { put("text", it) }
                     size?.let { put("fontSize", it.normalized()) }
                     family?.let { put("fontFamily", it) }
+                    if (weight?.compareTo(500.toBigDecimal()) == 0) put("medium", true)
                     if (weight?.compareTo(700.toBigDecimal()) == 0) put("bold", true)
                     lineHeight?.let { put("lineHeight", it.normalized()) }
                     style.num("letterSpacing")?.let { if (it.signum() != 0) put("letterSpacing", it.normalized()) }

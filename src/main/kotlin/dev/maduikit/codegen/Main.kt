@@ -24,7 +24,7 @@ internal val figmaComponentId = Regex("[0-9]+:[0-9]+")
 private val argbPattern = Regex("#[0-9A-Fa-f]{8}")
 private val numericPattern = Regex("-?(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,6})?")
 private val boxFields = setOf("gap", "padding", "paddingEdges", "fillWidth", "width", "height", "background", "clip", "linearGradient", "mainCentered", "mainSpaceBetween", "crossCentered", "cornerRadii")
-private val textFields = setOf("text", "fontSize", "color", "bold", "fillWidth", "width", "height", "lineHeight", "letterSpacing", "fontFamily")
+private val textFields = setOf("text", "fontSize", "color", "bold", "medium", "fillWidth", "width", "height", "lineHeight", "letterSpacing", "fontFamily")
 
 internal data class Problem(val nodeId: String, val path: String, val message: String)
 private data class Gradient(val axis: String, val start: BigDecimal, val end: BigDecimal,
@@ -42,6 +42,7 @@ private data class Node(
     val fontSize: BigDecimal? = null,
     val color: String? = null,
     val bold: Boolean = false,
+    val medium: Boolean = false,
     val width: BigDecimal? = null,
     val paddingEdges: List<BigDecimal>? = null,
     val clip: Boolean = false,
@@ -269,8 +270,11 @@ private class Reader(private val asset: ExplicitAsset?) {
                 val family = string("fontFamily")
                 if (family != null && family !in setOf("SansSerif", "Serif", "Monospace"))
                     error(id, "$path.fontFamily", "Unsupported font family")
+                val bold = flag("bold")
+                val medium = flag("medium")
+                if (bold && medium) error(id, "$path.medium", "Medium and bold cannot both be true")
                 return Node(id, type, text = string("text", true), fillWidth = flag("fillWidth"),
-                    fontSize = number("fontSize", 1, 128), color = color("color"), bold = flag("bold"),
+                    fontSize = number("fontSize", 1, 128), color = color("color"), bold = bold, medium = medium,
                     width = number("width", min = 1), height = number("height", min = 1),
                     lineHeight = number("lineHeight", 1, 256), letterSpacing = number("letterSpacing", -100, 100),
                     fontFamily = family)
@@ -469,6 +473,7 @@ private class Emitter(private val function: String) {
                     node.fontFamily?.let { add("fontFamily = FontFamily.$it") }
                     node.color?.let { add("color = Color(0x$it)") }
                     if (node.bold) add("fontWeight = FontWeight.Bold")
+                    if (node.medium) add("fontWeight = FontWeight.Medium")
                 }
                 lines += indent + params.joinToString(", ", "Text(", ")")
             }

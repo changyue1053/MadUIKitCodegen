@@ -73,3 +73,9 @@ val atomicFrameSmokeTest by tasks.registering(Exec::class) {
     commandLine("python3", "scripts/atomic-frame-smoke.py", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
 }
 tasks.check { dependsOn(atomicFrameSmokeTest) }
+
+val mediumWeightSmokeTest by tasks.registering(Exec::class) {
+    dependsOn(tasks.installDist)
+    commandLine("python3", "scripts/medium-weight-smoke.py", layout.buildDirectory.file("install/MadUIKitCodegen/bin/MadUIKitCodegen").get().asFile.absolutePath)
+}
+tasks.check { dependsOn(mediumWeightSmokeTest) }

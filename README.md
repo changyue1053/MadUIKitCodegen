@@ -19,7 +19,7 @@ diff -r sample-output build/generated/profile
 
 - `schemaVersion: 1` 配一个根 `Column` 和唯一、稳定的 `id`。
 - 布局：`Column`、`Row`、`Box`。支持 `children`、`padding`、`fillWidth`、`height`、`background`；Column 和 Row 另外支持 `gap`。尺寸为整数 dp。
-- `Text`：`text`、`fontSize`（整数 sp）、`color`、`bold`。默认字型来自宿主，未固定 Figma 字体。
+- `Text`：`text`、`fontSize`（整数 sp）、`color`、`bold` 或 `medium`。两个字重标志不能同时为 true。默认字型来自宿主，未固定 Figma 字体。
 - `Button`：`text`、`fillWidth`，只支持显式 `action: "save"`。P0 按钮样式来自 Material3，不假装复刻设计。
 - 色值使用 `#AARRGGBB`。未知节点/属性、重复 ID 或无效输入严格退出 2；能定位到节点时，`diagnostics.json` 包含节点 ID 和路径。请使用新的输出目录或以退出码与输入哈希判断结果，失败不会将上一次的文件视作本次产物。
 
@@ -34,7 +34,7 @@ diff -r sample-figma-output build/generated/figma-profile
 这份 fixture 是按照 Figma REST 文件节点接口的 `nodes[id].document` 结构编写的**公开合成样例**；不是从真实 Figma 文件下载。输入必须包含指定节点的完整子树；请勿使用截断子树的数据。此仓库不包含网络采集脚本、真实稿件或素材。节点 ID 用 API 的冒号格式（如 `1:2`）。程序不需要 Token、网络或 Figma 的实时连接。
 
 - 输出：`FigmaProfileScreen.generated.kt`、`normalized-frame.json`、`manifest.json`、`source-map.json`、`diagnostics.json`。清单含输入 SHA-256、源版本（响应里提供时）、适配器版本、生成代码哈希；源码映射保留可见图层的原始 id。Demo 引用 `dev.maduikit.demo.generated.FigmaProfileScreen()`。
-- 支持：横/纵向、不换行、起点或居中对齐的 Auto Layout FRAME，常规固定/HUG 尺寸、纵向父节点下子节点的横向 FILL、不对称内边距、可选裁切、单色 RGBA 填充、真实 TEXT 文本（泛型字族、400/700、常规字间距和部分行高）。显式隐藏的子树不参与布局或生成。设计坐标按 1 设计 px → 1 dp/sp 解释，保留最多 6 位小数；颜色转 8 位 ARGB。
+- 支持：横/纵向、不换行、起点或居中对齐的 Auto Layout FRAME，常规固定/HUG 尺寸、纵向父节点下子节点的横向 FILL、不对称内边距、可选裁切、单色 RGBA 填充、真实 TEXT 文本（泛型字族、400/500/700、常规字间距和部分行高）。显式隐藏的子树不参与布局或生成。设计坐标按 1 设计 px → 1 dp/sp 解释，保留最多 6 位小数；颜色转 8 位 ARGB。
 - P1 路径不支持：图片填充、矢量、常规渐变（P5 的窄范围轴对齐扩展见下文）、阴影、描边、多重混合、旋转/绝对定位、复杂对齐、Rich Text、字体素材及交互推断等。命名字体（包括 Inter）需要明确字体素材/映射，当前严格拒绝，不用另一字体替换。合成样例中的 CSS 泛型字族是用于验证流程的输入值，不代表真实设计已复刻该字体。
 - 超出范围的可见节点或已识别但未支持的视觉属性返回退出码 2，报告节点 ID 与字段路径；新输出目录不会得到成功产物。前次结果如果仍在原目录，不是当次产物，应以退出码和输入哈希为准。流程演示不等于实稿验收或像素级一致。
 
@@ -237,3 +237,14 @@ selected layer correctly. Existing schema-1 VECTOR maps are unchanged.
 
 `scripts/atomic-frame-smoke.py` constructs a generic three-bar illustration
 and validates deterministic emission and fail-closed rejection cases.
+
+
+### Generic medium text weight
+
+For generic font families, the Figma adapter maps numeric `fontWeight: 500`
+to normalized `Text.medium: true` and emits `FontWeight.Medium`. This
+does not select a named font binary or guarantee that every native host has a
+distinct medium face. Schema 1 remains accepted: the old regular default and
+`bold: true` representation keep their existing output. Medium and bold cannot
+both be enabled. Unsupported weights, textual weights, and malformed flags fail
+with diagnostics instead of rounding or choosing a fallback.
